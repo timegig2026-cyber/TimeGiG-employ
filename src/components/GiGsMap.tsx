@@ -177,12 +177,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   }, [isCreateModalOpen, coords]);
 
-  // Notify the app bar when creation form toggles to hide bottom navigation menu bar
+  // Notify the app bar when creation form toggles or a gig is selected to hide bottom navigation menu bar
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent('gigs_form_status', { detail: { open: isCreateModalOpen } })
+      new CustomEvent('gigs_form_status', { detail: { open: isCreateModalOpen || selectedGig !== null } })
     );
-  }, [isCreateModalOpen]);
+  }, [isCreateModalOpen, selectedGig]);
 
   // Load User Profile Logo from Store
   const loadUserProfileLogo = () => {
@@ -672,6 +672,8 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
       if (editExpiry) {
         updatedFields.expiresAt = new Date(editExpiry).toISOString();
+      } else {
+        updatedFields.expiresAt = ""; // empty clears the expiry date
       }
 
       await updateDoc(gigDocRef, updatedFields);
@@ -1333,11 +1335,10 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Gig Auto-Expiry Date & Time (Removes from Map)</span>
+                  <span>Gig Auto-Expiry Date & Time (Optional)</span>
                 </label>
                 <input
                   type="datetime-local"
-                  required
                   value={expiryDateTime}
                   onChange={(e) => setExpiryDateTime(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 transition-all"
@@ -1460,10 +1461,9 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
               </div>
 
               <div className="space-y-1">
-                <span className="text-[8px] font-black uppercase text-stone-400">Edit Expiry Date & Time</span>
+                <span className="text-[8px] font-black uppercase text-stone-400">Edit Expiry Date & Time (Optional)</span>
                 <input
                   type="datetime-local"
-                  required
                   value={editExpiry}
                   onChange={(e) => setEditExpiry(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
