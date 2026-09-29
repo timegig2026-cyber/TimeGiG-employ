@@ -13,6 +13,9 @@ export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<TabType>('Profile');
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
+  const [isUserSignedUp, setIsUserSignedUp] = useState<boolean>(() => {
+    return localStorage.getItem('timegig_signed_up') === 'true';
+  });
 
   useEffect(() => {
     getStoredProfiles();
@@ -24,7 +27,15 @@ export default function App() {
       }
     };
 
+    const handleSignupStatus = (e: Event) => {
+      const customEv = e as CustomEvent;
+      if (customEv.detail && typeof customEv.detail.isSignedUp === 'boolean') {
+        setIsUserSignedUp(customEv.detail.isSignedUp);
+      }
+    };
+
     window.addEventListener('gigs_form_status', handleFormStatus);
+    window.addEventListener('timegig_signup_status', handleSignupStatus);
 
     // Keep splash screen visible alone for exactly 5 seconds
     const splashTimer = setTimeout(() => {
@@ -33,6 +44,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('gigs_form_status', handleFormStatus);
+      window.removeEventListener('timegig_signup_status', handleSignupStatus);
       clearTimeout(splashTimer);
     };
   }, []);
@@ -110,7 +122,7 @@ export default function App() {
 
       {/* Realistic 3D Bottom Menu Bar */}
       <nav className={`fixed bottom-0 left-0 right-0 bg-gradient-to-b from-[#FAF4E6]/95 via-[#EADBCA]/95 to-[#D5C2A5]/95 backdrop-blur-md border-t border-white/80 px-2 py-1.5 flex justify-around items-center shadow-[0_-6px_20px_rgba(0,0,0,0.12)] z-40 transition-all duration-300 ${
-        isFormOpen ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
+        isFormOpen || !isUserSignedUp ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
       }`}>
         {navItems.map((item) => {
           const isActive = activeTab === item.name;

@@ -270,6 +270,11 @@ export function ProfileFeature() {
     };
   }, [loadActiveProfile]);
 
+  // Sync sign up status with App level navigation bar
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('timegig_signup_status', { detail: { isSignedUp } }));
+  }, [isSignedUp]);
+
   // Handle Logout
   const handleLogout = () => {
     setIsLoggedOut(true);
