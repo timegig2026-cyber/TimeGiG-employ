@@ -64,7 +64,7 @@ interface Gig {
   createdBy: string;
   status?: 'active' | 'completed' | 'cancelled';
   cancellationReason?: string;
-  expiresAt?: string; // ISO string representing expiry
+  expiresAt?: string; 
   createdAt?: any;
 }
 
@@ -94,6 +94,9 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
 
+  // Requirement: Interactive prompt state when searching address
+  const [pendingSearchLocation, setPendingSearchLocation] = useState<{ lat: number; lng: number; displayName: string } | null>(null);
+
   // Direct Location Search & Geocoding inside Gig Creation Form
   const [formSearchQuery, setFormSearchQuery] = useState<string>('');
   const [formSearchResults, setFormSearchResults] = useState<SearchResult[]>([]);
@@ -116,7 +119,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [newBudget, setNewBudget] = useState<string>('');
   const [newAddress, setNewAddress] = useState<string>(''); 
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [expiryDateTime, setExpiryDateTime] = useState<string>(''); // Date/time gig automatically expires
+  const [expiryDateTime, setExpiryDateTime] = useState<string>(''); 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
 
@@ -156,7 +159,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
   const currentUserId = getUserId();
 
-  // Requirement: Let the exact location automatically auto fill when creating gig.
+  // Reverse geocode user location on mount or when opening form
   useEffect(() => {
     if (isCreateModalOpen && coords && !newAddress) {
       fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`)
@@ -368,7 +371,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
           return;
         }
 
-        // Expiry date comparison (automatic gig removal)
+        // Expiry comparison
         if (gig.expiresAt) {
           const expiryTime = new Date(gig.expiresAt).getTime();
           const currentTime = new Date().getTime();
@@ -459,7 +462,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         html: `
           <div class="relative flex flex-col items-center animate-bounce">
             <div class="bg-amber-500 text-stone-950 text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg mb-1 whitespace-nowrap">
-              Exact Gig Spot Plotted!
+              Exact Spot Plotted!
             </div>
             <div class="w-8 h-8 rounded-full bg-stone-900 border-2 border-amber-500 flex items-center justify-center text-amber-500 shadow-2xl">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -726,7 +729,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         createdAt: new Date()
       };
 
-      // Set expiry date and time when creating a gig
       if (expiryDateTime) {
         docPayload.expiresAt = new Date(expiryDateTime).toISOString();
       }
@@ -807,7 +809,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       setShowDropdown(true);
 
       if (data && data.length > 0) {
-        navigateToLocation(parseFloat(data[0].lat), parseFloat(data[0].lon), data[0].display_name);
+        // Requirement: When user search location let the app first ask if user want to create a gig at that searched location or skip
+        setPendingSearchLocation({
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon),
+          displayName: data[0].display_name
+        });
       }
     } catch (err) {
       console.error("Search error:", err);
@@ -816,6 +823,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
+  // Set selected coordinate, position markers and start guidance
   const navigateToLocation = (lat: number, lng: number, displayName: string) => {
     if (!mapInstanceRef.current) return;
 
@@ -978,7 +986,14 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
             {searchResults.map((result) => (
               <button
                 key={result.place_id}
-                onClick={() => navigateToLocation(parseFloat(result.lat), parseFloat(result.lon), result.display_name)}
+                onClick={() => {
+                  // Requirement: Ask if user wants to create a gig at that searched location or skip
+                  setPendingSearchLocation({
+                    lat: parseFloat(result.lat),
+                    lng: parseFloat(result.lon),
+                    displayName: result.display_name
+                  });
+                }}
                 className="w-full text-left px-3 py-2.5 hover:bg-white/10 text-white rounded-xl flex items-center gap-2.5 transition-all cursor-pointer text-xs group"
               >
                 <MapPin className="w-4 h-4 text-amber-500 shrink-0 group-hover:scale-110 transition-transform" />
@@ -1009,6 +1024,65 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-100 block">Job Application Submitted</span>
             <p className="text-xs font-bold">Guidance started to the gig's exact location!</p>
+          </div>
+        </div>
+      )}
+
+      {/* Requirement: Create Gig Confirmation Prompt Overlay on top of Search */}
+      {pendingSearchLocation && (
+        <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-md flex items-center justify-center p-4 z-[3500] animate-fade-in">
+          <div className="bg-stone-900 border border-white/10 rounded-3xl p-5 max-w-sm w-full shadow-2xl flex flex-col space-y-4 text-stone-300">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/35 flex items-center justify-center text-amber-400 shrink-0">
+                <HelpCircle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-white text-xs font-black uppercase tracking-wider font-sans">Location Found!</h3>
+                <p className="text-[10px] text-stone-400 font-sans">Create a Gig or Skip?</p>
+              </div>
+            </div>
+
+            <div className="space-y-1 bg-stone-950/40 p-3 rounded-2xl border border-white/5 font-sans">
+              <span className="text-[8px] font-black uppercase text-stone-500 block">Searched Location Address</span>
+              <p className="text-white text-xs font-bold leading-relaxed line-clamp-2">
+                {pendingSearchLocation.displayName}
+              </p>
+            </div>
+
+            <p className="text-[11px] text-stone-400 leading-relaxed font-sans">
+              Would you like to **create and post a live Gig job** at this exact searched location, or **skip** and just view it on the map?
+            </p>
+
+            <div className="flex flex-col gap-2 pt-1 shrink-0 font-sans">
+              <button
+                onClick={() => {
+                  const { lat, lng, displayName } = pendingSearchLocation;
+                  setPinLocation({ lat, lng });
+                  setNewAddress(displayName);
+                  setFormSearchQuery(displayName);
+                  setIsCreateModalOpen(true);
+                  setPendingSearchLocation(null);
+                  setShowDropdown(false);
+                  speakGuidance("Opening form to post a gig at your searched location.");
+                }}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black uppercase tracking-wider rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+              >
+                <MapPin className="w-4 h-4 shrink-0" />
+                <span>📍 Yes, Create Gig Here</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  const { lat, lng, displayName } = pendingSearchLocation;
+                  navigateToLocation(lat, lng, displayName);
+                  setPendingSearchLocation(null);
+                  speakGuidance("Skipped. Centering map on address.");
+                }}
+                className="w-full py-3 bg-stone-800 hover:bg-stone-750 text-white font-black uppercase tracking-wider rounded-2xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Skip & Just View Address</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1047,9 +1121,8 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </div>
       )}
 
-      {/* Integrated Vertical Control Column (Zoom + Satellite Switcher + Create a Gig + Recenter Location) */}
+      {/* Integrated Vertical Control Column */}
       <div className="absolute top-1/2 -translate-y-1/2 right-4 z-[2000] flex flex-col gap-2">
-        {/* Requirement: Recenter Map to user exact location */}
         <button
           onClick={() => {
             if (coords) {
@@ -1060,7 +1133,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
               initiateLocationAccess();
             }
           }}
-          className="w-10 h-10 bg-stone-900/90 backdrop-blur-md border border-white/20 rounded-xl shadow-2xl flex items-center justify-center hover:bg-stone-800 text-amber-400 active:scale-90 transition-all cursor-pointer animate-none"
+          className="w-10 h-10 bg-stone-900/90 backdrop-blur-md border border-white/20 rounded-xl shadow-2xl flex items-center justify-center hover:bg-stone-800 text-amber-400 active:scale-90 transition-all cursor-pointer"
           title="Recenter Map to My GPS Location"
         >
           <Compass className="w-5 h-5 stroke-[2.2]" />
@@ -1267,7 +1340,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                   required
                   value={expiryDateTime}
                   onChange={(e) => setExpiryDateTime(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 transition-all animate-none"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 transition-all"
                 />
               </div>
 
@@ -1308,7 +1381,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </div>
       )}
 
-      {/* Gig Detailed Board - Requirement: Show within screen, don't make it bigger. Max height & scrollable */}
+      {/* Gig Detailed Board */}
       {selectedGig && (
         <div className="absolute bottom-4 left-4 right-16 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-85 max-h-[42vh] overflow-y-auto bg-stone-900/95 backdrop-blur-md border border-white/10 shadow-2xl rounded-3xl p-4 flex flex-col space-y-3 z-[2500] animate-slide-up text-stone-300 select-none">
           
