@@ -3,6 +3,7 @@ import { Compass, Navigation, Map, Zap, User } from 'lucide-react';
 import { ProfileFeature } from './components/ProfileFeature';
 import { TenantFeature } from './components/TenantFeature';
 import { ActivationFeature } from './components/ActivationFeature';
+import { SeekersFeature } from './components/SeekersFeature';
 import GiGsMap from './components/GiGsMap';
 import { getStoredProfiles } from './utils/profileStore';
 
@@ -70,8 +71,8 @@ export default function App() {
         </div>
 
         {/* Seekers Tab */}
-        <div className={`w-full max-w-md h-full flex-1 flex flex-col items-center justify-center text-center py-20 ${activeTab === 'Seekers' ? 'block animate-fade-in' : 'hidden'}`}>
-          {/* Seekers View */}
+        <div className={`w-full ${activeTab === 'Seekers' ? 'block animate-fade-in' : 'hidden'}`}>
+          <SeekersFeature />
         </div>
       </main>
 

@@ -20,10 +20,17 @@ import {
   Eye,
   CheckSquare,
   Clock,
-  DollarSign
+  DollarSign,
+  AlertTriangle,
+  XCircle,
+  Compass,
+  Trash2,
+  Edit3,
+  Save,
+  Calendar
 } from 'lucide-react';
-import { db } from '../firebase';
-import { collection, addDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getStoredProfiles } from '../utils/profileStore';
 
 interface UserCoords {
@@ -53,6 +60,11 @@ interface Gig {
   budget: string;
   lat: number;
   lng: number;
+  address?: string;
+  createdBy: string;
+  status?: 'active' | 'completed' | 'cancelled';
+  cancellationReason?: string;
+  expiresAt?: string; // ISO string representing expiry
   createdAt?: any;
 }
 
@@ -73,16 +85,22 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   // Map Layer States (Street vs Satellite)
   const [mapType, setMapType] = useState<'street' | 'satellite'>('street');
 
-  // Search Collapsing State (Requirement 2: User can hide search bar)
+  // Search Collapsing State
   const [isSearchCollapsed, setIsSearchCollapsed] = useState<boolean>(false);
 
-  // Search States
+  // Search States (Main Map View)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
 
-  // User Profile logo state (Requirement 3: show profile logo on the map)
+  // Direct Location Search & Geocoding inside Gig Creation Form
+  const [formSearchQuery, setFormSearchQuery] = useState<string>('');
+  const [formSearchResults, setFormSearchResults] = useState<SearchResult[]>([]);
+  const [isFormSearching, setIsFormSearching] = useState<boolean>(false);
+  const [showFormDropdown, setShowFormDropdown] = useState<boolean>(false);
+
+  // User Profile logo state
   const [profileLogo, setProfileLogo] = useState<string | null>(null);
 
   // Routing Guidance States
@@ -96,19 +114,67 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [newDesc, setNewDesc] = useState<string>('');
   const [newCategory, setNewCategory] = useState<string>('Plumbing');
   const [newBudget, setNewBudget] = useState<string>('');
+  const [newAddress, setNewAddress] = useState<string>(''); 
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [expiryDateTime, setExpiryDateTime] = useState<string>(''); // Date/time gig automatically expires
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState<boolean>(false);
 
-  // Gig Details & Applying (Requirement 3: Click gig to show full information and apply)
+  // Gig Details, Completing, Editing & Cancelling
   const [selectedGig, setSelectedGig] = useState<Gig | null>(null);
   const [isApplying, setIsApplying] = useState<boolean>(false);
   const [showApplySuccess, setShowApplySuccess] = useState<boolean>(false);
 
+  // Edit Inline States
+  const [isEditingMode, setIsEditingMode] = useState<boolean>(false);
+  const [editTitle, setEditTitle] = useState<string>('');
+  const [editBudget, setEditBudget] = useState<string>('');
+  const [editDesc, setEditDesc] = useState<string>('');
+  const [editCategory, setEditCategory] = useState<string>('');
+  const [editAddress, setEditAddress] = useState<string>('');
+  const [editExpiry, setEditExpiry] = useState<string>('');
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+
+  // Cancellation Flow States
+  const [isCancellingMode, setIsCancellingMode] = useState<boolean>(false);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  const [isCompletingMode, setIsCompletingMode] = useState<boolean>(false);
+
   // Default initial center (Cape Town center)
   const defaultCenter = { lat: -33.9249, lng: 18.4241 };
 
-  // Dispatch custom event when the Creation form is toggled so App.tsx can hide the bottom menu bar
+  // Retrieve persistent session-safe identifier for current user/device
+  const getUserId = () => {
+    if (auth.currentUser?.email) return auth.currentUser.email;
+    let localId = localStorage.getItem('timegig_local_uid');
+    if (!localId) {
+      localId = 'user_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('timegig_local_uid', localId);
+    }
+    return localId;
+  };
+
+  const currentUserId = getUserId();
+
+  // Requirement: Let the exact location automatically auto fill when creating gig.
+  useEffect(() => {
+    if (isCreateModalOpen && coords && !newAddress) {
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.display_name) {
+            setNewAddress(data.display_name);
+            setFormSearchQuery(data.display_name);
+          }
+        })
+        .catch((err) => {
+          console.warn("Reverse geocode failed:", err);
+          setNewAddress("Current GPS Location");
+        });
+    }
+  }, [isCreateModalOpen, coords]);
+
+  // Notify the app bar when creation form toggles to hide bottom navigation menu bar
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('gigs_form_status', { detail: { open: isCreateModalOpen } })
@@ -148,12 +214,8 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const speakGuidance = (text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-    // Cancel active synthesis first
     window.speechSynthesis.cancel();
-
     const utterance = new SpeechSynthesisUtterance(text);
-
-    // Dynamic lady/assistant voice lookup
     const voices = window.speechSynthesis.getVoices();
     const femaleVoice = voices.find((v) => {
       const name = v.name.toLowerCase();
@@ -174,17 +236,17 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       utterance.voice = femaleVoice;
     }
 
-    utterance.pitch = 1.08; // Friendly feminine voice pitch
-    utterance.rate = 0.95;  // Clear, friendly pace
+    utterance.pitch = 1.08;
+    utterance.rate = 0.95;
     window.speechSynthesis.speak(utterance);
   };
 
-  // Speak automatically whenever route metadata updates
+  // Speak automatically whenever route updates
   useEffect(() => {
     if (!routeInfo) return;
     const destName = routeInfo.destinationName ? `to ${routeInfo.destinationName}` : '';
     speakGuidance(
-      `Guidance started. Your destination ${destName} is ${routeInfo.distance} away. The estimated drive time is ${routeInfo.duration}. Have a safe and pleasant trip!`
+      `Guidance started. Your destination ${destName} is ${routeInfo.distance} away. The estimated drive time is ${routeInfo.duration}. Have a safe trip!`
     );
   }, [routeInfo]);
 
@@ -201,7 +263,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   }, []);
 
-  // Track exact position using HTML5 Geolocation API
+  // Track exact position using Geolocation API
   const handleGPSSuccess = (pos: GeolocationPosition) => {
     const { latitude, longitude, accuracy } = pos.coords;
     setCoords({ lat: latitude, lng: longitude, accuracy });
@@ -237,7 +299,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       attributionControl: false
     }).setView([defaultCenter.lat, defaultCenter.lng], 13);
 
-    // Initial Street Tile Layer
     const initialLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       subdomains: ['a', 'b', 'c']
@@ -264,7 +325,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Remove old active layer
     if (tileLayerRef.current) {
       mapInstanceRef.current.removeLayer(tileLayerRef.current);
     }
@@ -285,7 +345,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     tileLayerRef.current = newLayer;
   }, [mapType]);
 
-  // Sync Gigs in Real-time from Firestore & bind click triggers
+  // Sync Gigs in Real-time from Firestore
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -293,7 +353,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedGigs: Gig[] = [];
 
-      // Clear all old gig markers first
       Object.values(liveGigMarkersRef.current).forEach((marker) => {
         if (mapInstanceRef.current) {
           mapInstanceRef.current.removeLayer(marker);
@@ -301,14 +360,27 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       });
       liveGigMarkersRef.current = {};
 
-      snapshot.forEach((doc) => {
-        const data = doc.data() as Omit<Gig, 'id'>;
-        const gig = { id: doc.id, ...data } as Gig;
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as Omit<Gig, 'id'>;
+        const gig = { id: docSnap.id, ...data } as Gig;
+
+        if (gig.status === 'cancelled' || gig.status === 'completed') {
+          return;
+        }
+
+        // Expiry date comparison (automatic gig removal)
+        if (gig.expiresAt) {
+          const expiryTime = new Date(gig.expiresAt).getTime();
+          const currentTime = new Date().getTime();
+          if (currentTime >= expiryTime) {
+            return;
+          }
+        }
+
         loadedGigs.push(gig);
 
-        // Render Marker for Gig on map
         if (mapInstanceRef.current && gig.lat && gig.lng) {
-          let categoryColor = '#f59e0b'; // Gold / Amber default
+          let categoryColor = '#f59e0b';
           if (gig.category === 'Electrical') categoryColor = '#ef4444';
           if (gig.category === 'Plumbing') categoryColor = '#3b82f6';
           if (gig.category === 'Painting') categoryColor = '#10b981';
@@ -334,9 +406,11 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
           const marker = L.marker([gig.lat, gig.lng], { icon: gigDivIcon }).addTo(mapInstanceRef.current);
 
-          // Click handler to display FULL INFORMATION side panel (Requirement 3)
           marker.on('click', () => {
             setSelectedGig(gig);
+            setIsEditingMode(false);
+            setIsCancellingMode(false);
+            setCancelReason('');
             if (mapInstanceRef.current) {
               mapInstanceRef.current.setView([gig.lat, gig.lng], 15);
             }
@@ -401,7 +475,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   }, [pinLocation, mapInstanceRef.current]);
 
-  // Update map and user marker immediately
+  // Update user marker and profile logo
   useEffect(() => {
     if (!mapInstanceRef.current || !coords) return;
 
@@ -441,7 +515,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       userMarkerRef.current.bindTooltip("You Are Here", { permanent: false, direction: 'top' });
     }
 
-    // Accuracy Circle
     if (accuracyCircleRef.current) {
       accuracyCircleRef.current.setLatLng([lat, lng]).setRadius(accuracy);
     } else {
@@ -504,7 +577,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  // Apply to Gig & Guide User (Requirement 3: Apply to gig & start direct route navigation)
+  // Apply to Gig & Guide User
   const handleApplyToGig = async (gig: Gig) => {
     if (!coords) {
       speakGuidance("Please wait for GPS coordinates to stabilize before applying.");
@@ -512,20 +585,114 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
 
     setIsApplying(true);
-    // Simulate high-fidelity gig application process
     setTimeout(() => {
       setIsApplying(false);
       setShowApplySuccess(true);
-      speakGuidance(`Congratulations! Your application to ${gig.title} is successful. Beginning routing guidance to the gig's exact location.`);
+      speakGuidance(`Congratulations! Your application to ${gig.title} is successful. Beginning routing guidance.`);
 
-      // Initiate continuous route guidelines
       calculateRoute(coords.lat, coords.lng, gig.lat, gig.lng, gig.title);
 
       setTimeout(() => {
         setShowApplySuccess(false);
-        setSelectedGig(null); // Minimize panel once navigation is underway
+        setSelectedGig(null);
       }, 4000);
     }, 1200);
+  };
+
+  // Cancel Gig Flow
+  const handleCancelGigSubmit = async () => {
+    if (!selectedGig || !cancelReason.trim()) return;
+
+    try {
+      const gigDocRef = doc(db, 'gigs', selectedGig.id);
+      await updateDoc(gigDocRef, {
+        status: 'cancelled',
+        cancellationReason: cancelReason
+      });
+
+      speakGuidance("This gig job has been successfully cancelled.");
+      setSelectedGig(null);
+      setIsCancellingMode(false);
+      setCancelReason('');
+    } catch (err) {
+      console.error("Failed to cancel gig:", err);
+    }
+  };
+
+  // Complete Gig Flow
+  const handleCompleteGigSubmit = async () => {
+    if (!selectedGig) return;
+
+    try {
+      const gigDocRef = doc(db, 'gigs', selectedGig.id);
+      await updateDoc(gigDocRef, {
+        status: 'completed'
+      });
+
+      speakGuidance("Great job! This gig has been marked as completed successfully.");
+      setSelectedGig(null);
+    } catch (err) {
+      console.error("Failed to complete gig:", err);
+    }
+  };
+
+  // Only gig creator can delete gig from the map
+  const handleDeleteGigSubmit = async () => {
+    if (!selectedGig) return;
+
+    try {
+      const gigDocRef = doc(db, 'gigs', selectedGig.id);
+      await deleteDoc(gigDocRef);
+
+      speakGuidance("This gig listing has been permanently deleted from the map.");
+      setSelectedGig(null);
+    } catch (err) {
+      console.error("Failed to delete gig:", err);
+    }
+  };
+
+  // Only gig creator can edit gig from the map
+  const handleSaveGigEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGig || !editTitle.trim() || !editBudget.trim()) return;
+
+    setIsSavingEdit(true);
+    try {
+      const gigDocRef = doc(db, 'gigs', selectedGig.id);
+      const updatedFields: Partial<Gig> = {
+        title: editTitle,
+        budget: editBudget,
+        description: editDesc,
+        category: editCategory,
+        address: editAddress
+      };
+
+      if (editExpiry) {
+        updatedFields.expiresAt = new Date(editExpiry).toISOString();
+      }
+
+      await updateDoc(gigDocRef, updatedFields);
+
+      speakGuidance("Your gig details are updated.");
+      setSelectedGig({ ...selectedGig, ...updatedFields });
+      setIsEditingMode(false);
+    } catch (err) {
+      console.error("Failed to edit gig:", err);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Trigger inline editor with active gig values
+  const handleStartEditing = () => {
+    if (!selectedGig) return;
+    setEditTitle(selectedGig.title);
+    setEditBudget(selectedGig.budget);
+    setEditDesc(selectedGig.description || '');
+    setEditCategory(selectedGig.category);
+    setEditAddress(selectedGig.address || '');
+    setEditExpiry(selectedGig.expiresAt ? selectedGig.expiresAt.substring(0, 16) : '');
+    setIsEditingMode(true);
   };
 
   // Submit New Gig to Firestore
@@ -546,15 +713,25 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'gigs'), {
+      const docPayload: any = {
         title: newTitle,
         description: newDesc,
         category: newCategory,
         budget: newBudget,
+        address: newAddress.trim() || 'Current Location Coordinates', 
         lat: targetLat,
         lng: targetLng,
+        createdBy: currentUserId,
+        status: 'active',
         createdAt: new Date()
-      });
+      };
+
+      // Set expiry date and time when creating a gig
+      if (expiryDateTime) {
+        docPayload.expiresAt = new Date(expiryDateTime).toISOString();
+      }
+
+      await addDoc(collection(db, 'gigs'), docPayload);
 
       setShowSuccessNotification(true);
       speakGuidance("Success! Your job has been published on the map.");
@@ -563,6 +740,9 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       setNewDesc('');
       setNewCategory('Plumbing');
       setNewBudget('');
+      setNewAddress('');
+      setFormSearchQuery('');
+      setExpiryDateTime('');
       setPinLocation(null);
       setIsCreateModalOpen(false);
 
@@ -576,7 +756,43 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  // Execute Address Search using Nominatim open-source API (Zero API Cost)
+  // Execute Address Search in Form
+  const handleFormLocationSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!formSearchQuery.trim()) return;
+
+    setIsFormSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formSearchQuery)}&limit=5`
+      );
+      const data = await response.json();
+      setFormSearchResults(data);
+      setShowFormDropdown(true);
+    } catch (err) {
+      console.error("Form search error:", err);
+    } finally {
+      setIsFormSearching(false);
+    }
+  };
+
+  // Set selected coordinate inside form dropdown
+  const handleSelectFormLocation = (result: SearchResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    
+    setPinLocation({ lat, lng });
+    setNewAddress(result.display_name);
+    setFormSearchQuery(result.display_name);
+    setShowFormDropdown(false);
+    setFormSearchResults([]);
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView([lat, lng], 16);
+    }
+  };
+
+  // Main address search
   const handleAddressSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -600,7 +816,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  // Center Map & Render Marker on searched address
   const navigateToLocation = (lat: number, lng: number, displayName: string) => {
     if (!mapInstanceRef.current) return;
 
@@ -637,6 +852,8 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
     if (isCreateModalOpen) {
       setPinLocation({ lat, lng });
+      setNewAddress(displayName); 
+      setFormSearchQuery(displayName);
     }
 
     if (coords) {
@@ -646,7 +863,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  // Clear Guidance Routing details
   const handleClearRoute = () => {
     if (mapInstanceRef.current) {
       if (routePolylineRef.current) {
@@ -667,7 +883,10 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  // Custom Zoom Control actions
+  const toggleMapType = () => {
+    setMapType((prev) => (prev === 'street' ? 'satellite' : 'street'));
+  };
+
   const handleZoomIn = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.zoomIn();
@@ -680,13 +899,8 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   };
 
-  const toggleMapType = () => {
-    setMapType((prev) => (prev === 'street' ? 'satellite' : 'street'));
-  };
-
   return (
-    <div className="fixed inset-0 w-full h-full pb-[64px] overflow-hidden bg-stone-900 z-10">
-      {/* Dynamic override styles for markers */}
+    <div className="fixed inset-0 w-full h-full pb-[64px] overflow-hidden bg-stone-900 z-10 select-none">
       <style>{`
         .custom-user-marker, .custom-search-marker, .custom-temp-marker, .custom-gig-marker {
           background: transparent !important;
@@ -695,10 +909,9 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         }
       `}</style>
 
-      {/* Address Search Bar / Collapsed Floating icon (Requirement 2: User can hide search bar) */}
+      {/* Address Search Bar / Collapsed Floating icon */}
       <div className="absolute top-4 left-4 right-4 z-[1001] max-w-md mx-auto transition-all duration-300">
         {isSearchCollapsed ? (
-          /* Tiny elegant search reveal button when hidden */
           <div className="flex justify-end pr-2">
             <button
               onClick={() => setIsSearchCollapsed(false)}
@@ -709,7 +922,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
             </button>
           </div>
         ) : (
-          /* Full expanded search bar with Hide Toggle built-in */
           <form onSubmit={handleAddressSearch} className="relative flex items-center w-full bg-stone-900/95 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl p-1.5 animate-fade-in">
             <div className="flex items-center flex-1 pl-2.5">
               <Search className="w-4 h-4 text-stone-400 shrink-0" />
@@ -733,7 +945,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
-              {/* Hide collapse icon trigger */}
               <button
                 type="button"
                 onClick={() => {
@@ -802,7 +1013,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </div>
       )}
 
-      {/* Floating Guidance / Route Info Card at the bottom center */}
+      {/* Floating Guidance / Route Info Card */}
       {routeInfo && (
         <div className="absolute bottom-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-85 z-[1001] bg-stone-950/95 border border-amber-500/30 shadow-2xl rounded-2xl p-3.5 flex items-center justify-between text-white animate-fade-in pointer-events-auto">
           <div className="flex items-center gap-2.5">
@@ -836,14 +1047,32 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </div>
       )}
 
-      {/* Integrated Vertical Control Column (Zoom + Satellite Switcher + Create a Gig) on the right vertical center */}
+      {/* Integrated Vertical Control Column (Zoom + Satellite Switcher + Create a Gig + Recenter Location) */}
       <div className="absolute top-1/2 -translate-y-1/2 right-4 z-[2000] flex flex-col gap-2">
-        {/* Create a Gig Button (Placed ontop of Map icon) */}
+        {/* Requirement: Recenter Map to user exact location */}
+        <button
+          onClick={() => {
+            if (coords) {
+              mapInstanceRef.current?.setView([coords.lat, coords.lng], 16, { animate: true, duration: 1.5 });
+              speakGuidance("Recentered on your exact GPS location.");
+            } else {
+              speakGuidance("Retrieving your GPS signal, please wait...");
+              initiateLocationAccess();
+            }
+          }}
+          className="w-10 h-10 bg-stone-900/90 backdrop-blur-md border border-white/20 rounded-xl shadow-2xl flex items-center justify-center hover:bg-stone-800 text-amber-400 active:scale-90 transition-all cursor-pointer animate-none"
+          title="Recenter Map to My GPS Location"
+        >
+          <Compass className="w-5 h-5 stroke-[2.2]" />
+        </button>
+
+        <div className="w-10 h-[1px] bg-white/15 my-0.5" />
+
         <button
           onClick={() => {
             setIsCreateModalOpen((prev) => !prev);
             setPinLocation(null);
-            setSelectedGig(null); // minimize details if open
+            setSelectedGig(null);
           }}
           className={`w-10 h-10 rounded-xl border shadow-2xl flex flex-col items-center justify-center active:scale-90 hover:scale-105 transition-all cursor-pointer font-sans ${
             isCreateModalOpen
@@ -864,7 +1093,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
         <div className="w-10 h-[1px] bg-white/15 my-0.5" />
 
-        {/* Satellite Map Switcher (Small elegant toggle icon) */}
         <button
           onClick={toggleMapType}
           className={`w-10 h-10 rounded-xl border shadow-2xl flex flex-col items-center justify-center active:scale-90 transition-all cursor-pointer bg-stone-900/90 backdrop-blur-md ${
@@ -882,7 +1110,6 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
         <div className="w-10 h-[1px] bg-white/10 my-0.5" />
 
-        {/* Zoom Controls */}
         <button
           onClick={handleZoomIn}
           className="w-10 h-10 bg-stone-900/90 backdrop-blur-md text-white border border-white/20 rounded-xl shadow-2xl flex items-center justify-center hover:bg-stone-800 active:scale-90 transition-all cursor-pointer"
@@ -899,11 +1126,10 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </button>
       </div>
 
-      {/* Requirement 1: Let the Gig form fill the screen. Covers entire map frame completely */}
+      {/* Gig Creator form - Fills screen completely */}
       {isCreateModalOpen && (
         <div className="absolute inset-0 z-[2500] bg-stone-950 overflow-y-auto flex flex-col p-6 animate-slide-up select-none">
           <div className="max-w-md mx-auto w-full flex flex-col space-y-6 pt-6 pb-20">
-            {/* Header */}
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
@@ -925,8 +1151,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
               </button>
             </div>
 
-            {/* Form Fields */}
-            <form onSubmit={handleCreateGigSubmit} className="space-y-5">
+            <form onSubmit={handleCreateGigSubmit} className="space-y-5 font-sans text-stone-300">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Job Title</label>
                 <input
@@ -935,8 +1160,53 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. Urgent painting or carpentry work needed"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 transition-all"
                 />
+              </div>
+
+              {/* Search Location */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                  🔍 Search & Pin Custom Location
+                </label>
+                <div className="relative flex items-center bg-stone-900 border border-white/10 rounded-2xl p-1 shrink-0 focus-within:border-amber-500 transition-all">
+                  <input
+                    type="text"
+                    value={formSearchQuery}
+                    onChange={(e) => setFormSearchQuery(e.target.value)}
+                    placeholder="Search address, street name, or suburb..."
+                    className="w-full bg-transparent text-white placeholder-stone-500 text-xs border-none outline-none focus:ring-0 pl-3 pr-2 py-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFormLocationSearch}
+                    disabled={isFormSearching}
+                    className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-[10px] px-3.5 py-2 rounded-xl uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-1 shrink-0"
+                  >
+                    {isFormSearching ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <span>Search</span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Dropdown */}
+                {showFormDropdown && formSearchResults.length > 0 && (
+                  <div className="bg-stone-900 border border-white/10 rounded-2xl p-1.5 mt-2 space-y-1 max-h-48 overflow-y-auto">
+                    {formSearchResults.map((result) => (
+                      <button
+                        key={result.place_id}
+                        type="button"
+                        onClick={() => handleSelectFormLocation(result)}
+                        className="w-full text-left text-white hover:bg-white/10 px-3 py-2.5 rounded-xl text-xs flex items-center gap-2.5 transition-all"
+                      >
+                        <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="truncate text-xs">{result.display_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -945,7 +1215,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full bg-stone-900 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                    className="w-full bg-stone-900 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 transition-all"
                   >
                     <option value="Plumbing">Plumbing</option>
                     <option value="Electrical">Electrical</option>
@@ -962,59 +1232,66 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                     required
                     value={newBudget}
                     onChange={(e) => setNewBudget(e.target.value)}
-                    placeholder="e.g. R600 / $150"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                    placeholder="e.g. R600"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 transition-all"
                   />
                 </div>
+              </div>
+
+              {/* Final address */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                  Final Gig Address Text (Change Manually)
+                </label>
+                <div className="relative flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5">
+                  <MapPin className="w-4 h-4 text-amber-500 mr-2 shrink-0" />
+                  <input
+                    type="text"
+                    required
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    placeholder="Auto-fills address, or type custom label..."
+                    className="w-full bg-transparent text-white placeholder-stone-500 text-sm border-none outline-none focus:ring-0 p-0"
+                  />
+                </div>
+              </div>
+
+              {/* Gig auto-expiry date */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Gig Auto-Expiry Date & Time (Removes from Map)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={expiryDateTime}
+                  onChange={(e) => setExpiryDateTime(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-amber-500 transition-all animate-none"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Detailed Description</label>
                 <textarea
-                  rows={4}
+                  rows={2}
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
                   placeholder="Describe your job requirements, steps, tools provided, and specific preferences..."
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all resize-none"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-white placeholder-stone-500 text-sm focus:outline-none focus:border-amber-500 transition-all resize-none"
                 />
               </div>
 
-              {/* Requirement 2: Exact Location or change location inside full-screen form */}
               <div className="p-4 bg-stone-900 border border-white/10 rounded-3xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">📍 Live Location Setting</span>
-                  <span className="text-amber-500 text-[10px] font-bold">Lock Coordinates</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">📍 Map Pinpoint Coordinates</span>
+                  <span className="text-amber-500 text-[10px] font-bold">Locked Spot</span>
                 </div>
-
-                <p className="text-xs text-stone-300 leading-relaxed">
-                  The gig will pin-point at: 
-                  {pinLocation ? (
-                    <strong className="text-white block font-mono text-xs mt-1 bg-white/5 p-2 rounded-xl">
-                      Latitude: {pinLocation.lat.toFixed(5)} , Longitude: {pinLocation.lng.toFixed(5)}
-                    </strong>
-                  ) : (
-                    <strong className="text-amber-400 block font-mono text-xs mt-1 bg-white/5 p-2 rounded-xl">
-                      Your Precise Current Geolocation (Default)
-                    </strong>
-                  )}
+                <p className="text-xs text-stone-300 leading-relaxed font-mono">
+                  {pinLocation ? `Lat: ${pinLocation.lat.toFixed(5)}, Lng: ${pinLocation.lng.toFixed(5)}` : "Using GPS Location Spot"}
                 </p>
-
-                <div className="text-[11px] text-stone-400 leading-relaxed italic bg-stone-950/40 p-3 rounded-2xl border border-white/5">
-                  💡 <span className="text-white font-bold">How to change location:</span> You can close this form temporarily, search for an address in the top search bar, or simply click any coordinate directly on the background map, and the gig pin will instantly reposition!
-                </div>
-
-                {pinLocation && (
-                  <button
-                    type="button"
-                    onClick={() => setPinLocation(null)}
-                    className="w-full py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer"
-                  >
-                    Reset to My GPS Location
-                  </button>
-                )}
               </div>
 
-              {/* Publish button */}
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -1031,75 +1308,286 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
         </div>
       )}
 
-      {/* Requirement 3: Show full information panel when user clicks any gig marker on the map */}
+      {/* Gig Detailed Board - Requirement: Show within screen, don't make it bigger. Max height & scrollable */}
       {selectedGig && (
-        <div className="absolute bottom-4 left-4 right-16 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-96 z-[2500] bg-stone-900/95 backdrop-blur-md border border-white/10 shadow-2xl rounded-3xl overflow-hidden animate-slide-up select-none p-5 flex flex-col space-y-4">
-          <div className="flex items-center justify-between border-b border-white/5 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                <Briefcase className="w-4.5 h-4.5" />
+        <div className="absolute bottom-4 left-4 right-16 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-85 max-h-[42vh] overflow-y-auto bg-stone-900/95 backdrop-blur-md border border-white/10 shadow-2xl rounded-3xl p-4 flex flex-col space-y-3 z-[2500] animate-slide-up text-stone-300 select-none">
+          
+          <div className="flex items-center justify-between border-b border-white/5 pb-2 shrink-0">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="w-7.5 h-7.5 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Briefcase className="w-4 h-4" />
               </div>
-              <div>
-                <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">Active Map Gig Job</span>
-                <span className="text-white font-extrabold text-sm block truncate max-w-[180px]">{selectedGig.title}</span>
+              <div className="overflow-hidden">
+                <span className="text-[8px] font-black uppercase tracking-wider text-stone-400 block">Live Job details</span>
+                <span className="text-white font-extrabold text-xs block truncate max-w-[160px]">{selectedGig.title}</span>
               </div>
             </div>
             <button
-              onClick={() => setSelectedGig(null)}
-              className="p-1 bg-white/5 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer"
+              onClick={() => {
+                setSelectedGig(null);
+                setIsEditingMode(false);
+                setIsCancellingMode(false);
+              }}
+              className="p-1 bg-white/5 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Details Row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-stone-950 p-2.5 rounded-2xl flex items-center gap-2 border border-white/5">
-              <Clock className="w-4 h-4 text-amber-500 shrink-0" />
-              <div>
-                <span className="text-[8px] font-bold text-stone-500 uppercase block">Category</span>
-                <span className="text-white text-[11px] font-black">{selectedGig.category}</span>
+          {/* Inline Edit View (Requirement: Only creator can edit from map) */}
+          {isEditingMode ? (
+            <form onSubmit={handleSaveGigEdit} className="space-y-3.5 text-xs font-sans text-stone-300">
+              <div className="space-y-1">
+                <span className="text-[8px] font-black uppercase text-stone-400">Edit Title</span>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
               </div>
-            </div>
-            <div className="bg-stone-950 p-2.5 rounded-2xl flex items-center gap-2 border border-white/5">
-              <DollarSign className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div>
-                <span className="text-[8px] font-bold text-stone-500 uppercase block">Payout</span>
-                <span className="text-emerald-400 text-[11px] font-black">{selectedGig.budget}</span>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <span className="text-[8px] font-black uppercase text-stone-400">Payout</span>
+                  <input
+                    type="text"
+                    required
+                    value={editBudget}
+                    onChange={(e) => setEditBudget(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[8px] font-black uppercase text-stone-400">Category</span>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full bg-stone-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Plumbing">Plumbing</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Painting">Painting</option>
+                    <option value="Carpentry">Carpentry</option>
+                    <option value="HVAC">HVAC</option>
+                  </select>
+                </div>
               </div>
+
+              <div className="space-y-1">
+                <span className="text-[8px] font-black uppercase text-stone-400">Edit Address Text</span>
+                <input
+                  type="text"
+                  required
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[8px] font-black uppercase text-stone-400">Edit Expiry Date & Time</span>
+                <input
+                  type="datetime-local"
+                  required
+                  value={editExpiry}
+                  onChange={(e) => setEditExpiry(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[8px] font-black uppercase text-stone-400">Description</span>
+                <textarea
+                  rows={2}
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingMode(false)}
+                  className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Regular Card Display Block */
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-2 text-stone-300">
+                <div className="bg-stone-950 p-2 rounded-xl flex items-center gap-2 border border-white/5">
+                  <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] font-bold text-stone-500 uppercase block">Category</span>
+                    <span className="text-white text-[10px] font-black block truncate">{selectedGig.category}</span>
+                  </div>
+                </div>
+                <div className="bg-stone-950 p-2 rounded-xl flex items-center gap-2 border border-white/5">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] font-bold text-stone-500 uppercase block">Payout</span>
+                    <span className="text-emerald-400 text-[10px] font-black block truncate">{selectedGig.budget}</span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedGig.expiresAt && (
+                <div className="bg-rose-950/25 border border-rose-500/20 p-2 rounded-xl flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] text-rose-400 font-black block uppercase">Auto-expiry Limit</span>
+                    <span className="text-white text-[9.5px] font-semibold block truncate">
+                      {new Date(selectedGig.expiresAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {selectedGig.address && (
+                <div className="bg-stone-950/40 p-2 rounded-xl border border-white/5 flex items-center gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] text-stone-500 font-bold block">Job Address Location</span>
+                    <span className="text-white text-[9.5px] font-semibold truncate block">{selectedGig.address}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-0.5 bg-stone-950/40 p-2.5 rounded-xl border border-white/5">
+                <span className="text-[8px] font-black uppercase tracking-wider text-stone-500 block">Description / Job Details</span>
+                <p className="text-stone-300 text-[11px] leading-relaxed max-h-20 overflow-y-auto pr-1">
+                  {selectedGig.description || 'No detailed instructions provided.'}
+                </p>
+              </div>
+
+              {/* Cancellation Dialog Area */}
+              {isCancellingMode && (
+                <div className="space-y-2 bg-rose-950/25 border border-rose-500/25 p-2.5 rounded-xl text-stone-300">
+                  <span className="text-[8px] font-black uppercase text-rose-400 block">Reason for cancellation</span>
+                  <textarea
+                    required
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Provide reason for cancelling..."
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-white text-[10px] outline-none resize-none"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCancelGigSubmit}
+                      disabled={!cancelReason.trim()}
+                      className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[9px] uppercase rounded-lg cursor-pointer"
+                    >
+                      Confirm Cancel
+                    </button>
+                    <button
+                      onClick={() => setIsCancellingMode(false)}
+                      className="px-2.5 py-1.5 bg-stone-800 text-stone-300 text-[9px] rounded-lg cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Complete Confirmation Area */}
+              {isCompletingMode && (
+                <div className="p-2.5 bg-emerald-950/20 border border-emerald-500/25 rounded-xl space-y-2 text-stone-300">
+                  <span className="text-[8px] text-emerald-400 font-black uppercase block">Mark Job Completed?</span>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleCompleteGigSubmit}
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black uppercase rounded-lg cursor-pointer"
+                    >
+                      Yes, Done
+                    </button>
+                    <button
+                      onClick={() => setIsCompletingMode(false)}
+                      className="px-2.5 py-1.5 bg-stone-800 text-stone-300 text-[9px] rounded-lg cursor-pointer"
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions Area */}
+              {!isCancellingMode && !isCompletingMode && (
+                <div className="space-y-2 shrink-0">
+                  {selectedGig.createdBy === currentUserId ? (
+                    /* Creator Flow (Requirement: Edit or Delete Gig only for Creator) */
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-center p-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                        <span className="text-[8px] font-black uppercase text-amber-500">
+                          ⭐ Gig Owner Control Panel
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          onClick={handleStartEditing}
+                          className="py-2 bg-stone-800 hover:bg-stone-700 text-amber-400 font-bold uppercase rounded-xl text-[9px] flex items-center justify-center gap-1 border border-white/10 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => setIsCompletingMode(true)}
+                          className="py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase rounded-xl text-[9px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <CheckSquare className="w-3.5 h-3.5" />
+                          <span>Done</span>
+                        </button>
+                        <button
+                          onClick={handleDeleteGigSubmit}
+                          className="py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold uppercase rounded-xl text-[9px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Applicant Flow */
+                    <button
+                      onClick={() => handleApplyToGig(selectedGig)}
+                      disabled={isApplying}
+                      className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+                    >
+                      {isApplying ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Applying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckSquare className="w-3.5 h-3.5" />
+                          <span>Apply & Navigate</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-
-          {/* Detailed description */}
-          <div className="space-y-1 bg-stone-950/40 p-3 rounded-2xl border border-white/5">
-            <span className="text-[9px] font-black uppercase tracking-wider text-stone-400">Description / Job Details</span>
-            <p className="text-stone-300 text-xs leading-relaxed max-h-24 overflow-y-auto pr-1">
-              {selectedGig.description || 'No detailed instructions or requirements provided for this gig.'}
-            </p>
-          </div>
-
-          {/* Apply action button (Requirement 3: Apply & start direct navigation) */}
-          <button
-            onClick={() => handleApplyToGig(selectedGig)}
-            disabled={isApplying}
-            className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
-          >
-            {isApplying ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Applying to Job...</span>
-              </>
-            ) : (
-              <>
-                <CheckSquare className="w-4 h-4" />
-                <span>Apply to this Gig & Navigate</span>
-              </>
-            )}
-          </button>
+          )}
         </div>
       )}
 
-      {/* Full-Screen Interactive Leaflet Map Container */}
+      {/* Full-Screen Map Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
     </div>
   );
