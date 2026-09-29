@@ -3,7 +3,7 @@ import { Compass, Navigation, Map, Zap, User } from 'lucide-react';
 import { ProfileFeature } from './components/ProfileFeature';
 import { TenantFeature } from './components/TenantFeature';
 import { ActivationFeature } from './components/ActivationFeature';
-import { GigsMapFeature } from './components/GigsMapFeature';
+import GiGsMap from './components/GiGsMap';
 import { getStoredProfiles } from './utils/profileStore';
 
 type TabType = 'Seekers' | 'GiGs' | 'Tenant' | 'Activation' | 'Profile';
@@ -38,7 +38,7 @@ export default function App() {
         {activeTab === 'Profile' && <ProfileFeature />}
         {activeTab === 'Tenant' && <TenantFeature />}
         {activeTab === 'Activation' && <ActivationFeature />}
-        {activeTab === 'GiGs' && <GigsMapFeature />}
+        {activeTab === 'GiGs' && <GiGsMap />}
         {activeTab === 'Seekers' && (
           <div className="w-full max-w-md h-full flex-1 flex flex-col items-center justify-center text-center py-20">
             {/* Seekers View */}
