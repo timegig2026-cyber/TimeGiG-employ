@@ -68,6 +68,76 @@ interface Gig {
   createdAt?: any;
 }
 
+interface MapSeeker {
+  id: string;
+  firstName: string;
+  surname: string;
+  category: string;
+  rating: number;
+  contactNumber: string;
+  lat: number;
+  lng: number;
+  bio: string;
+}
+
+const SEEDED_MAP_SEEKERS: MapSeeker[] = [
+  {
+    id: 'ms1',
+    firstName: 'Lungile',
+    surname: 'Nene',
+    category: 'Electrical',
+    rating: 4.9,
+    contactNumber: '+27 72 345 6789',
+    lat: -33.9130,
+    lng: 18.4110,
+    bio: 'Professional certified electrician with over 8 years experience in installations and emergency repairs.'
+  },
+  {
+    id: 'ms2',
+    firstName: 'Devon',
+    surname: 'Naidoo',
+    category: 'Plumbing',
+    rating: 4.8,
+    contactNumber: '+27 83 987 6543',
+    lat: -33.9350,
+    lng: 18.4310,
+    bio: 'Specialist plumber in drainage systems, high pressure leak detection and kitchen repair work.'
+  },
+  {
+    id: 'ms3',
+    firstName: 'Sarah',
+    surname: 'Van der Merwe',
+    category: 'Painting',
+    rating: 4.7,
+    contactNumber: '+27 61 234 5678',
+    lat: -33.9290,
+    lng: 18.4510,
+    bio: 'Experienced interior & exterior high-quality painter. Friendly service and clean work ethic.'
+  },
+  {
+    id: 'ms4',
+    firstName: 'Thabo',
+    surname: 'Khumalo',
+    category: 'Cleaning',
+    rating: 4.9,
+    contactNumber: '+27 72 555 4321',
+    lat: -33.9050,
+    lng: 18.4050,
+    bio: 'Detail-oriented commercial & deep home cleaning expert with verified references.'
+  },
+  {
+    id: 'ms5',
+    firstName: 'Francois',
+    surname: 'Du Toit',
+    category: 'Gardening',
+    rating: 4.6,
+    contactNumber: '+27 83 111 9999',
+    lat: -33.9390,
+    lng: 18.4010,
+    bio: 'Lawn care specialist, landscaping designs, hedge pruning and garden waste removal service.'
+  }
+];
+
 export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -78,6 +148,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const tempMarkerRef = useRef<L.Marker | null>(null);
   const liveGigMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const liveSeekerMarkersRef = useRef<{ [id: string]: L.Marker }>({});
 
   const watchIdRef = useRef<number | null>(null);
   const [coords, setCoords] = useState<UserCoords | null>(null);
@@ -143,6 +214,13 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [cancelReason, setCancelReason] = useState<string>('');
   const [isCompletingMode, setIsCompletingMode] = useState<boolean>(false);
 
+  // Seekers simulation states
+  const [seekersOnMap, setSeekersOnMap] = useState<MapSeeker[]>(SEEDED_MAP_SEEKERS);
+  const [selectedSeeker, setSelectedSeeker] = useState<MapSeeker | null>(null);
+  const [hiringSeekerState, setHiringSeekerState] = useState<'idle' | 'inviting' | 'driving' | 'arrived'>('idle');
+  const [inviteCountdown, setInviteCountdown] = useState<number>(60);
+  const [applyCountdown, setApplyCountdown] = useState<number>(60);
+
   // Default initial center (Cape Town center)
   const defaultCenter = { lat: -33.9249, lng: 18.4241 };
 
@@ -177,12 +255,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
   }, [isCreateModalOpen, coords]);
 
-  // Notify the app bar when creation form toggles or a gig is selected to hide bottom navigation menu bar
+  // Notify the app bar when creation form toggles or a gig/seeker is selected to hide bottom navigation menu bar
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent('gigs_form_status', { detail: { open: isCreateModalOpen || selectedGig !== null } })
+      new CustomEvent('gigs_form_status', { detail: { open: isCreateModalOpen || selectedGig !== null || selectedSeeker !== null } })
     );
-  }, [isCreateModalOpen, selectedGig]);
+  }, [isCreateModalOpen, selectedGig, selectedSeeker]);
 
   // Load User Profile Logo from Store
   const loadUserProfileLogo = () => {
@@ -429,6 +507,53 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     return () => unsubscribe();
   }, [mapInstanceRef.current, coords]);
 
+  // Render Seeded Seekers on the Map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Remove existing seeker markers
+    Object.values(liveSeekerMarkersRef.current).forEach((marker) => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.removeLayer(marker);
+      }
+    });
+    liveSeekerMarkersRef.current = {};
+
+    seekersOnMap.forEach((seeker) => {
+      // Seekers have a distinct emerald green marker indicating live freelancers on the map!
+      const seekerIcon = L.divIcon({
+        className: 'custom-seeker-marker',
+        html: `
+          <div class="relative flex flex-col items-center group">
+            <div class="absolute -top-12 bg-emerald-950 text-emerald-200 border border-emerald-400 text-[9px] font-bold px-2 py-1 rounded-md shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50 pointer-events-none">
+              Seeker: ${seeker.firstName} ${seeker.surname} (${seeker.category})
+            </div>
+            <div class="w-8 h-8 rounded-full border-2 border-white bg-emerald-600 shadow-xl flex items-center justify-center text-white scale-95 hover:scale-110 active:scale-90 transition-all duration-300">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div class="w-1.5 h-1.5 bg-white border border-emerald-500 rounded-full -mt-0.5 shadow-lg"></div>
+          </div>
+        `,
+        iconSize: [32, 45],
+        iconAnchor: [16, 40]
+      });
+
+      const marker = L.marker([seeker.lat, seeker.lng], { icon: seekerIcon }).addTo(mapInstanceRef.current!);
+
+      marker.on('click', () => {
+        // Clear previous card selections
+        setSelectedGig(null);
+        setSelectedSeeker(seeker);
+        setHiringSeekerState('idle');
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.setView([seeker.lat, seeker.lng], 15);
+        }
+      });
+
+      liveSeekerMarkersRef.current[seeker.id] = marker;
+    });
+  }, [mapInstanceRef.current, seekersOnMap]);
+
   // Bind click-to-pin target event on map when Gig Creation mode is active
   useEffect(() => {
     if (!mapInstanceRef.current) return;
@@ -588,18 +713,29 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
     }
 
     setIsApplying(true);
-    setTimeout(() => {
-      setIsApplying(false);
-      setShowApplySuccess(true);
-      speakGuidance(`Congratulations! Your application to ${gig.title} is successful. Beginning routing guidance.`);
+    setApplyCountdown(60);
+    speakGuidance(`Initiating job application to ${gig.title}. Securing freelancer contract connections.`);
 
-      calculateRoute(coords.lat, coords.lng, gig.lat, gig.lng, gig.title);
+    const interval = setInterval(() => {
+      setApplyCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setIsApplying(false);
+          setShowApplySuccess(true);
+          speakGuidance(`Congratulations! Your application to ${gig.title} is successful. Beginning routing guidance.`);
 
-      setTimeout(() => {
-        setShowApplySuccess(false);
-        setSelectedGig(null);
-      }, 4000);
-    }, 1200);
+          calculateRoute(coords.lat, coords.lng, gig.lat, gig.lng, gig.title);
+
+          setTimeout(() => {
+            setShowApplySuccess(false);
+            setSelectedGig(null);
+          }, 4000);
+
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
   // Cancel Gig Flow
@@ -1297,6 +1433,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                     <option value="Painting">Painting</option>
                     <option value="Carpentry">Carpentry</option>
                     <option value="HVAC">HVAC</option>
+                    <option value="Cleaning">Cleaning</option>
+                    <option value="Gardening">Gardening</option>
+                    <option value="Delivery">Delivery</option>
+                    <option value="Handyman">Handyman</option>
+                    <option value="Moving Help">Moving Help</option>
+                    <option value="Babysitting">Babysitting</option>
                   </select>
                 </div>
 
@@ -1445,6 +1587,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                     <option value="Painting">Painting</option>
                     <option value="Carpentry">Carpentry</option>
                     <option value="HVAC">HVAC</option>
+                    <option value="Cleaning">Cleaning</option>
+                    <option value="Gardening">Gardening</option>
+                    <option value="Delivery">Delivery</option>
+                    <option value="Handyman">Handyman</option>
+                    <option value="Moving Help">Moving Help</option>
+                    <option value="Babysitting">Babysitting</option>
                   </select>
                 </div>
               </div>
@@ -1638,12 +1786,12 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                     <button
                       onClick={() => handleApplyToGig(selectedGig)}
                       disabled={isApplying}
-                      className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+                      className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-stone-950 font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer animate-pulse"
                     >
                       {isApplying ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Applying...</span>
+                          <Loader2 className="w-4 h-4 animate-spin text-stone-950" />
+                          <span>Applying... ({applyCountdown}s)</span>
                         </>
                       ) : (
                         <>
@@ -1655,6 +1803,175 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                   )}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Seeker Map Detailed Board (Requirement: Show seekers on map, click to see details, waiting circular accept loader, glide animation, speak arrived on arrive) */}
+      {selectedSeeker && (
+        <div className="absolute bottom-4 left-4 right-16 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-85 max-h-[42vh] overflow-y-auto bg-stone-900 border-2 border-emerald-500/50 shadow-2xl rounded-3xl p-4 flex flex-col space-y-3 z-[2500] text-stone-300 select-none transition-none">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2 shrink-0">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="w-7.5 h-7.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div className="overflow-hidden">
+                <span className="text-[8px] font-black uppercase tracking-wider text-emerald-400 block">Nearby Seeker</span>
+                <span className="text-white font-extrabold text-xs block truncate max-w-[160px]">{selectedSeeker.firstName} {selectedSeeker.surname}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedSeeker(null);
+                setHiringSeekerState('idle');
+              }}
+              className="p-1 bg-white/5 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {hiringSeekerState === 'inviting' ? (
+            /* CIRCLE LOADING: Waiting for Seeker to accept */
+            <div className="flex flex-col items-center justify-center py-6 space-y-3.5 text-center animate-fade-in font-sans">
+              <div className="relative w-14 h-14 flex items-center justify-center">
+                {/* Circular loading track */}
+                <div className="absolute inset-0 rounded-full border-4 border-stone-800"></div>
+                {/* Spinning top indicator */}
+                <div className="absolute inset-0 rounded-full border-4 border-t-emerald-500 border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
+                <Clock className="w-6 h-6 text-emerald-400 animate-pulse" />
+                <div className="absolute -bottom-2 bg-stone-950 px-2 py-0.5 rounded-full text-[8px] font-black text-amber-400 border border-white/10">
+                  {inviteCountdown}s
+                </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">Despatching Work Invitation</span>
+                <p className="text-xs font-bold text-white">Waiting for {selectedSeeker.firstName} to accept...</p>
+                <p className="text-[10px] text-stone-400">Verifying nearest seeker route coordinates</p>
+              </div>
+            </div>
+          ) : hiringSeekerState === 'driving' ? (
+            /* DRIVING: Real-time route motion simulation */
+            <div className="flex flex-col items-center justify-center py-6 space-y-3.5 text-center animate-fade-in font-sans">
+              <div className="relative w-14 h-14 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center text-emerald-400 shadow-xl">
+                <Navigation className="w-6 h-6 animate-bounce" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Invitation Accepted!</span>
+                <p className="text-xs font-bold text-white">{selectedSeeker.firstName} is heading to your exact location</p>
+                <p className="text-[10px] text-stone-400 italic">Watch seeker's marker slide towards you in real-time</p>
+              </div>
+            </div>
+          ) : hiringSeekerState === 'arrived' ? (
+            /* ARRIVED: Success celebration block */
+            <div className="flex flex-col items-center justify-center py-6 space-y-3.5 text-center animate-fade-in font-sans">
+              <div className="w-14 h-14 bg-emerald-500 rounded-full border-4 border-white flex items-center justify-center text-white shadow-2xl">
+                <CheckSquare className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-emerald-100 tracking-wider bg-emerald-600 px-2 py-0.5 rounded-full inline-block font-sans">Arrived!</span>
+                <h4 className="text-xs font-black text-white">{selectedSeeker.firstName} Has Arrived</h4>
+                <p className="text-[10px] text-emerald-300 leading-relaxed max-w-[220px] font-sans"> Hired specialist has reached your exact location spot. Work has commenced!</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedSeeker(null);
+                  setHiringSeekerState('idle');
+                }}
+                className="py-1.5 px-5 bg-stone-800 hover:bg-stone-750 text-white font-extrabold text-[10px] rounded-xl tracking-wider uppercase transition-colors"
+              >
+                Close & Return
+              </button>
+            </div>
+          ) : (
+            /* IDLE CARD DETAIL VIEW */
+            <div className="space-y-2.5 font-sans">
+              <div className="grid grid-cols-2 gap-2 text-stone-300">
+                <div className="bg-stone-950 p-2 rounded-xl flex items-center gap-2 border border-white/5 font-sans">
+                  <Clock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] font-bold text-stone-500 uppercase block">Trade Category</span>
+                    <span className="text-white text-[10px] font-black block truncate">{selectedSeeker.category}</span>
+                  </div>
+                </div>
+                <div className="bg-stone-950 p-2 rounded-xl flex items-center gap-2 border border-white/5 font-sans">
+                  <DollarSign className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <div className="overflow-hidden">
+                    <span className="text-[7px] font-bold text-stone-500 uppercase block font-sans">Hourly Rating</span>
+                    <span className="text-amber-400 text-[10px] font-black block truncate font-sans">⭐ {selectedSeeker.rating.toFixed(1)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-stone-950/40 p-2.5 rounded-xl border border-white/5 space-y-0.5 font-sans">
+                <span className="text-[8px] font-black uppercase tracking-wider text-stone-500 block">About Seeker / Bio</span>
+                <p className="text-stone-300 text-[11px] leading-relaxed italic line-clamp-3">
+                  "{selectedSeeker.bio}"
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setHiringSeekerState('inviting');
+                  speakGuidance(`Sending immediate work invitation to ${selectedSeeker.firstName}. Waiting for seeker acceptance.`);
+                  
+                  // Simulates Seeker accepting in 4.5 seconds
+                  setTimeout(() => {
+                    setHiringSeekerState('driving');
+                    speakGuidance(`Invitation accepted. ${selectedSeeker.firstName} is heading to your exact location now.`);
+                    
+                    // Starts high-frequency smooth marker glide animation
+                    const startLat = selectedSeeker.lat;
+                    const startLng = selectedSeeker.lng;
+                    const destLat = coords ? coords.lat : defaultCenter.lat;
+                    const destLng = coords ? coords.lng : defaultCenter.lng;
+
+                    const stepsCount = 15;
+                    let currentStep = 0;
+
+                    const animationInterval = setInterval(() => {
+                      currentStep++;
+                      const ratio = currentStep / stepsCount;
+                      const nextLat = startLat + (destLat - startLat) * ratio;
+                      const nextLng = startLng + (destLng - startLng) * ratio;
+
+                      // Update coordinate directly in state to move their marker in real-time!
+                      setSeekersOnMap((prev) =>
+                        prev.map((s) => (s.id === selectedSeeker.id ? { ...s, lat: nextLat, lng: nextLng } : s))
+                      );
+
+                      // Update routing visual guidelines
+                      if (mapInstanceRef.current) {
+                        if (routePolylineRef.current) {
+                          mapInstanceRef.current.removeLayer(routePolylineRef.current);
+                        }
+                        routePolylineRef.current = L.polyline(
+                          [[nextLat, nextLng], [destLat, destLng]],
+                          { color: '#10b981', weight: 5, dashArray: '5, 10' }
+                        ).addTo(mapInstanceRef.current);
+                      }
+
+                      if (currentStep >= stepsCount) {
+                        clearInterval(animationInterval);
+                        setHiringSeekerState('arrived');
+                        speakGuidance("Arrived! Your hired specialist has arrived at your exact location.");
+                        
+                        setTimeout(() => {
+                          if (routePolylineRef.current && mapInstanceRef.current) {
+                            mapInstanceRef.current.removeLayer(routePolylineRef.current);
+                            routePolylineRef.current = null;
+                          }
+                        }, 4000);
+                      }
+                    }, 450);
+
+                  }, 4500);
+                }}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black uppercase tracking-wider rounded-2xl text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer font-sans"
+              >
+                <span>⚡ Hire & Request Instant Dispatch</span>
+              </button>
             </div>
           )}
         </div>

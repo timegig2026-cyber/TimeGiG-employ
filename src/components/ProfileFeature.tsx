@@ -81,6 +81,150 @@ export function ProfileFeature() {
   const [status, setStatus] = useState<ProfileStatus>('Not Submitted');
   const [rejectionReason, setRejectionReason] = useState<string | undefined>(undefined);
 
+  // Sign Up Flow & Verification States
+  const [isSignedUp, setIsSignedUp] = useState<boolean>(() => {
+    return localStorage.getItem('timegig_signed_up') === 'true';
+  });
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupTermsAccepted, setSignupTermsAccepted] = useState(false);
+  const [signupPhotoType, setSignupPhotoType] = useState<'upload' | 'selfie'>('selfie');
+  
+  const [cameraActive, setCameraActive] = useState(false);
+  const [selfieStream, setSelfieStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const startCamera = async () => {
+    try {
+      setDocRequirementError(null);
+      setCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 320, facingMode: 'user' }
+      });
+      setSelfieStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.error("Camera access failed:", err);
+      setCameraActive(false);
+      setDocRequirementError("Failed to access live camera stream. Feel free to use 'Simulate Snapshot' or upload your profile logo!");
+    }
+  };
+
+  const stopCamera = () => {
+    if (selfieStream) {
+      selfieStream.getTracks().forEach(track => track.stop());
+      setSelfieStream(null);
+    }
+    setCameraActive(false);
+  };
+
+  const captureSelfieAction = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 320;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, 320, 320);
+        const dataUrl = canvas.toDataURL('image/png');
+        setFaceImage(dataUrl);
+        stopCamera();
+        setSaveSuccessMsg('Live selfie captured and set as your official profile logo!');
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      }
+    }
+  };
+
+  const simulateSelfieSnap = () => {
+    // Generates a gorgeous premium profile avatar as a dataurl fallback
+    const canvas = document.createElement('canvas');
+    canvas.width = 300;
+    canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 300, 300);
+      grad.addColorStop(0, '#f59e0b');
+      grad.addColorStop(1, '#1e293b');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 300, 300);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 110px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TG', 150, 150);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      setFaceImage(dataUrl);
+      setSaveSuccessMsg('Beautiful high-definition simulated selfie generated and set!');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    }
+  };
+
+  const handleSignupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDocRequirementError(null);
+
+    if (!signupEmail.trim() || !signupPassword.trim()) {
+      setDocRequirementError("Please fill in your email address and credentials password.");
+      return;
+    }
+
+    if (signupPassword.length < 6) {
+      setDocRequirementError("Security password must be at least 6 characters in length.");
+      return;
+    }
+
+    if (!signupTermsAccepted) {
+      setDocRequirementError("You must read and accept the terms and conditions code of conduct.");
+      return;
+    }
+
+    if (!faceImage) {
+      setDocRequirementError("A profile logo is required! Please upload a file or capture a live selfie.");
+      return;
+    }
+
+    const firstWord = signupEmail.split('@')[0];
+    const generatedFirstName = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+
+    const newUserProfile: UserProfileSubmission = {
+      id: 'sub_' + Date.now(),
+      submittedAt: new Date().toISOString(),
+      firstName: generatedFirstName,
+      middleName: '',
+      surname: 'Member',
+      dob: '2000-01-01',
+      address: 'Main Road, Cape Town',
+      location: 'Western Cape',
+      province: 'Western Cape',
+      contactNumber: '+27 72 ' + Math.floor(1000000 + Math.random() * 9000000),
+      email: signupEmail,
+      faceImage: faceImage,
+      documents: [],
+      socialLinks: [{ id: '1', platform: 'LinkedIn', url: '' }],
+      status: 'Not Submitted',
+      isLocked: false
+    };
+
+    addOrUpdateProfileSubmission(newUserProfile);
+    setCurrentProfile(newUserProfile);
+    setIsSignedUp(true);
+    localStorage.setItem('timegig_signed_up', 'true');
+    setIsLoggedOut(false);
+    
+    setFirstName(generatedFirstName);
+    setSurname('Member');
+    setEmail(signupEmail);
+
+    speakVoice(`Congratulations! Your account under ${signupEmail} has been successfully created. Welcome to TimeGiG!`);
+    setSaveSuccessMsg('Welcome to TimeGiG! Your account has been provisioned successfully.');
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
   // Warnings and notifications
   const [logoWarning, setLogoWarning] = useState<string | null>(null);
   const [docRequirementError, setDocRequirementError] = useState<string | null>(null);
@@ -286,6 +430,203 @@ export function ProfileFeature() {
     setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
+  if (!isSignedUp) {
+    return (
+      <div className="w-full max-w-md mx-auto py-8 px-4 font-sans select-none space-y-6">
+        <div className="bg-gradient-to-b from-[#FAF4E6] to-[#EADBCA]/95 border-2 border-stone-200 p-6 rounded-3xl shadow-2xl space-y-5 text-stone-800">
+          <div className="text-center space-y-1.5">
+            <h2 className="text-stone-900 text-xl font-black uppercase tracking-wider">TimeGiG Account</h2>
+            <p className="text-[11px] text-stone-600">Register below, agree to terms, and capture your profile photo to get started.</p>
+          </div>
+
+          {/* Error notifications */}
+          {docRequirementError && (
+            <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-950 text-xs font-semibold flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+              <span>{docRequirementError}</span>
+            </div>
+          )}
+
+          {saveSuccessMsg && (
+            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-950 text-xs font-semibold flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+              <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSignupSubmit} className="space-y-4">
+            {/* Email input */}
+            <div className="space-y-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 block">Email Address</span>
+              <input
+                type="email"
+                required
+                value={signupEmail}
+                onChange={(e) => setSignupEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* Password input */}
+            <div className="space-y-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 block">Password</span>
+              <input
+                type="password"
+                required
+                value={signupPassword}
+                onChange={(e) => setSignupPassword(e.target.value)}
+                placeholder="••••••"
+                className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            {/* Photo Choice Option */}
+            <div className="space-y-2">
+              <span className="text-[9px] font-black uppercase tracking-widest text-stone-500 block">Setup Profile Logo</span>
+              <div className="grid grid-cols-2 gap-2 bg-stone-200/55 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => { setSignupPhotoType('selfie'); stopCamera(); }}
+                  className={`py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${signupPhotoType === 'selfie' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500'}`}
+                >
+                  📸 Capture Selfie
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSignupPhotoType('upload'); stopCamera(); }}
+                  className={`py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${signupPhotoType === 'upload' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500'}`}
+                >
+                  📁 Upload Logo
+                </button>
+              </div>
+
+              {signupPhotoType === 'selfie' ? (
+                /* Capture Selfie Panel */
+                <div className="bg-stone-950 p-4 rounded-2xl text-center space-y-3.5 border border-white/5 relative overflow-hidden">
+                  {cameraActive ? (
+                    <div className="relative w-44 h-44 mx-auto rounded-full overflow-hidden border-2 border-amber-500 bg-stone-900">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover scale-x-[-1]"
+                      />
+                    </div>
+                  ) : faceImage ? (
+                    <div className="relative w-44 h-44 mx-auto rounded-full overflow-hidden border-2 border-emerald-500 bg-stone-900">
+                      <img src={faceImage} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-44 h-44 mx-auto rounded-full bg-stone-900 border-2 border-dashed border-stone-700 flex flex-col items-center justify-center text-stone-500">
+                      <Camera className="w-8 h-8 animate-pulse text-stone-400" />
+                      <span className="text-[8px] font-black uppercase mt-1">No Feed</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap justify-center gap-1.5">
+                    {!cameraActive ? (
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-[10px] font-black uppercase tracking-wider shadow-md"
+                      >
+                        Start Camera
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={captureSelfieAction}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 text-[10px] font-black uppercase tracking-wider shadow-md animate-pulse"
+                      >
+                        Capture Snap
+                      </button>
+                    )}
+                    {cameraActive && (
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-black uppercase tracking-wider"
+                      >
+                        Stop
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={simulateSelfieSnap}
+                      className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-750 text-white text-[10px] font-black uppercase tracking-wider border border-white/5"
+                    >
+                      Simulate Selfie
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* File Upload Logo Panel */
+                <div className="bg-stone-50 border-2 border-dashed border-stone-300 rounded-2xl p-4 text-center space-y-3">
+                  {faceImage ? (
+                    <div className="w-20 h-20 rounded-full overflow-hidden mx-auto border-2 border-emerald-500 shadow-md">
+                      <img src={faceImage} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto text-stone-400">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black text-stone-700 uppercase tracking-wider block">Choose Logo Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFaceUpload}
+                      className="text-[10px] text-stone-600 block mx-auto font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Terms and Conditions mini text block */}
+            <div className="bg-white border border-stone-200 p-2.5 rounded-xl text-[9px] text-stone-500 space-y-1">
+              <span className="text-[8px] font-black uppercase text-stone-700 tracking-wider block">TimeGiG Code of Conduct</span>
+              <div className="max-h-16 overflow-y-auto pr-1 leading-relaxed space-y-1">
+                <p>1. By joining, I agree to post authentic background credentials.</p>
+                <p>2. I will adhere to safe dispatch practices and respect spatial boundaries.</p>
+                <p>3. Subscription billing is tracked transparently under my profile dashboard.</p>
+              </div>
+            </div>
+
+            {/* Terms check checkbox */}
+            <label className="flex items-start gap-2.5 cursor-pointer text-stone-700">
+              <input
+                type="checkbox"
+                required
+                checked={signupTermsAccepted}
+                onChange={(e) => setSignupTermsAccepted(e.target.checked)}
+                className="mt-0.5 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-[10px] font-bold select-none leading-tight">
+                I accept the TimeGiG Terms &amp; Conditions and consent to instant radar tracking.
+              </span>
+            </label>
+
+            {/* Create Account Submit Button */}
+            <button
+              type="submit"
+              className="w-full py-4 bg-stone-900 hover:bg-stone-850 text-white font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-lg cursor-pointer"
+            >
+              <span>🚀 Sign Up &amp; Activate Session</span>
+            </button>
+          </form>
+        </div>
+
+        <p className="text-[10px] text-stone-400 text-center italic">
+          💡 Already registered? Tap signup and we'll automatically authenticate your details.
+        </p>
+      </div>
+    );
+  }
+
   if (isLoggedOut) {
     return (
       <div className="w-full max-w-sm mx-auto py-12 px-4 text-center space-y-4">
@@ -336,6 +677,15 @@ export function ProfileFeature() {
             className="w-full py-4 bg-stone-900 hover:bg-stone-850 text-white font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg cursor-pointer"
           >
             <span>🔓 Decrypt & Unlock Profile</span>
+          </button>
+
+          {/* Logout button visible when profile is locked */}
+          <button
+            onClick={handleLogout}
+            className="w-full py-3 bg-stone-200/60 hover:bg-stone-300/80 border border-stone-300 text-stone-800 font-black uppercase tracking-widest rounded-2xl text-[10px] flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-sm cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out Session</span>
           </button>
         </div>
 

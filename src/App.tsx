@@ -10,6 +10,7 @@ import { getStoredProfiles } from './utils/profileStore';
 type TabType = 'Seekers' | 'GiGs' | 'Tenant' | 'Activation' | 'Profile';
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<TabType>('Profile');
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
 
@@ -24,8 +25,15 @@ export default function App() {
     };
 
     window.addEventListener('gigs_form_status', handleFormStatus);
+
+    // Keep splash screen visible alone for exactly 5 seconds
+    const splashTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 5000);
+
     return () => {
       window.removeEventListener('gigs_form_status', handleFormStatus);
+      clearTimeout(splashTimer);
     };
   }, []);
 
@@ -36,6 +44,30 @@ export default function App() {
     { name: 'Activation' as TabType, icon: Zap },
     { name: 'Profile' as TabType, icon: User },
   ];
+
+  if (showSplash) {
+    return (
+      <div className="fixed inset-0 w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-[#FAF4E6] via-[#EADBCA] to-[#D5C2A5] overflow-hidden z-[10000] select-none font-sans">
+        {/* Blurry wallpaper background features */}
+        <div className="absolute top-1/4 left-1/4 w-80 h-80 rounded-full bg-amber-500/25 blur-[120px] animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-stone-500/20 blur-[130px]" />
+        
+        {/* Full screen backdrop blur */}
+        <div className="absolute inset-0 bg-stone-900/10 backdrop-blur-3xl" />
+
+        {/* Central focused App Name "TimeGiG" alone without logos */}
+        <div className="relative text-center space-y-4 animate-fade-in px-4">
+          <h1 className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tighter text-stone-900 drop-shadow-[0_4px_12px_rgba(0,0,0,0.15)] uppercase font-sans">
+            Time<span className="text-amber-600">GiG</span>
+          </h1>
+          <div className="w-16 h-[3px] bg-gradient-to-r from-stone-900 to-amber-600 mx-auto rounded-full animate-pulse" />
+          <p className="text-[10px] text-stone-600 tracking-[0.25em] font-bold uppercase">
+            On-Demand Labor Radar
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/90 text-stone-900 flex flex-col relative font-sans antialiased overflow-x-hidden">

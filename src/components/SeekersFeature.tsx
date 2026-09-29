@@ -147,6 +147,10 @@ const SEEDED_SEEKERS: SeekerProfile[] = [
 ];
 
 export function SeekersFeature() {
+  const [isSeekerLive, setIsSeekerLive] = useState<boolean>(() => {
+    return localStorage.getItem('seeker_live_status') !== 'false';
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProvince, setSelectedProvince] = useState<string>('All Provinces');
   const [milesLimit, setMilesLimit] = useState<number>(50); 
@@ -363,7 +367,21 @@ export function SeekersFeature() {
 
       {/* Directory Seeker Cards Grid */}
       <div className="space-y-2.5">
-        {filteredSeekers.length > 0 ? (
+        {!isSeekerLive ? (
+          <div className="bg-stone-900 border-2 border-amber-500/35 rounded-3xl p-8 text-center text-stone-400 space-y-4 shadow-xl animate-fade-in font-sans">
+            <div className="w-14 h-14 bg-stone-950 rounded-full flex items-center justify-center mx-auto border border-white/5 text-stone-500 relative">
+              <Compass className="w-6 h-6 animate-pulse text-amber-500" />
+              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 rounded-full border border-stone-900" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase text-amber-400 tracking-widest">Seeker Radar Deactivated</span>
+              <h4 className="font-extrabold text-xs text-white">You are Offline</h4>
+              <p className="text-[10px] text-stone-400 leading-relaxed max-w-xs mx-auto">
+                Turn on the **Live/Online Switcher** at the bottom center of the screen to start your dispatch tracker, broadcast your location, and view other active seekers!
+              </p>
+            </div>
+          </div>
+        ) : filteredSeekers.length > 0 ? (
           filteredSeekers.map((seeker) => {
             const distance = getDistanceInMiles(activeLat, activeLng, seeker.lat, seeker.lng);
             return (
@@ -376,14 +394,18 @@ export function SeekersFeature() {
                 className="bg-white hover:bg-stone-50 border border-stone-200/80 rounded-2xl p-4 shadow-md transition-all duration-300 hover:scale-[1.01] hover:shadow-lg cursor-pointer flex items-center justify-between"
               >
                 <div className="flex items-center gap-3.5 overflow-hidden">
-                  <div className="w-11 h-11 rounded-full border border-stone-200 shadow-sm shrink-0 overflow-hidden bg-stone-900 flex items-center justify-center">
-                    {seeker.faceImage ? (
-                      <img src={seeker.faceImage} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-stone-800 to-stone-950 text-amber-400 font-extrabold text-xs">
-                        {seeker.firstName[0]}{seeker.surname[0]}
-                      </div>
-                    )}
+                  <div className="relative shrink-0">
+                    <div className="w-11 h-11 rounded-full border border-stone-200 shadow-sm overflow-hidden bg-stone-900 flex items-center justify-center">
+                      {seeker.faceImage ? (
+                        <img src={seeker.faceImage} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-stone-800 to-stone-950 text-amber-400 font-extrabold text-xs">
+                          {seeker.firstName[0]}{seeker.surname[0]}
+                        </div>
+                      )}
+                    </div>
+                    {/* Pulsing online green dot on logo */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full shadow-md animate-pulse" />
                   </div>
 
                   <div className="space-y-0.5 overflow-hidden font-sans">
@@ -637,6 +659,34 @@ export function SeekersFeature() {
           </div>
         </div>
       )}
+      {/* Floating Live On/Off Toggle Switcher at bottom center */}
+      <div className="fixed bottom-22 left-1/2 -translate-x-1/2 bg-stone-950/95 border-2 border-amber-500/30 px-5 py-3 rounded-full shadow-2xl flex items-center gap-3.5 z-[1000] backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${isSeekerLive ? 'bg-emerald-500 animate-ping' : 'bg-rose-500 animate-pulse'}`} />
+          <span className="text-[10px] font-black uppercase text-stone-200 tracking-wider">
+            {isSeekerLive ? 'Radar: Live' : 'Radar: Offline'}
+          </span>
+        </div>
+        <div className="w-[1px] h-4 bg-white/10" />
+        <button
+          type="button"
+          onClick={() => {
+            const newLiveState = !isSeekerLive;
+            setIsSeekerLive(newLiveState);
+            localStorage.setItem('seeker_live_status', String(newLiveState));
+            if (newLiveState) {
+              speakVoice("Radar online! You are now live and visible to nearby clients for immediate hiring.");
+            } else {
+              speakVoice("Radar offline. You are now offline.");
+            }
+          }}
+          className={`relative inline-flex h-5.5 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out focus:outline-none ${isSeekerLive ? 'bg-emerald-500' : 'bg-stone-700'}`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow-xl ring-0 transition duration-250 ease-in-out ${isSeekerLive ? 'translate-x-5.5' : 'translate-x-0'}`}
+          />
+        </button>
+      </div>
     </div>
   );
 }

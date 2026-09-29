@@ -193,43 +193,78 @@ export function TenantFeature() {
       <header className="fixed top-0 left-0 right-0 w-full bg-gradient-to-b from-[#FAF4E6] via-[#EADBCA] to-[#D5C2A5] border-b border-white/80 px-2 sm:px-4 py-1.5 flex items-center justify-around shadow-[0_3px_10px_rgba(0,0,0,0.1)] z-30 overflow-x-auto">
         {(['Verification', 'UserPoP', 'TenantPoP', 'Active Users', 'Overview', 'Settings'] as const).map((menuItem) => {
           const isActive = activeMenu === menuItem;
+          
+          // Gadget Icon selector
+          const renderGadgetIcon = () => {
+            const iconProps = { className: `w-3.5 h-3.5 transition-transform duration-300 group-hover:scale-110 shrink-0 ${isActive ? 'text-black stroke-[2.5]' : 'text-stone-700'}` };
+            switch (menuItem) {
+              case 'Verification': return <ShieldCheck {...iconProps} />;
+              case 'UserPoP': return <Receipt {...iconProps} />;
+              case 'TenantPoP': return <Building2 {...iconProps} />;
+              case 'Active Users': return <Users {...iconProps} />;
+              case 'Overview': return <TrendingUp {...iconProps} />;
+              case 'Settings': return <Sparkles {...iconProps} />;
+              default: return null;
+            }
+          };
+
           return (
             <button
               key={menuItem}
               onClick={() => setActiveMenu(menuItem)}
-              className="relative flex items-center gap-1 px-2 sm:px-2.5 py-0.5 transition-all duration-200 group cursor-pointer whitespace-nowrap"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all duration-300 group cursor-pointer whitespace-nowrap ${
+                isActive 
+                  ? 'bg-black/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)] border border-black/10' 
+                  : 'hover:bg-black/5 border border-transparent'
+              }`}
             >
+              {/* Gadget Icon (Left decoration) */}
+              {renderGadgetIcon()}
+
               <span
-                className={`text-[9px] font-black uppercase tracking-wider text-black transition-all duration-300 ${
+                className={`text-[9.5px] font-black uppercase tracking-wider text-black transition-all duration-300 ${
                   isActive
-                    ? 'scale-105 drop-shadow-[0_1px_1px_rgba(255,255,255,0.9)] underline underline-offset-2 decoration-2 decoration-black'
+                    ? 'scale-105 drop-shadow-[0_1px_1px_rgba(255,255,255,0.9)] underline underline-offset-4 decoration-2 decoration-black'
                     : 'opacity-80 hover:opacity-100'
                 }`}
               >
                 {menuItem}
               </span>
 
-              {menuItem === 'Verification' && pendingCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-black text-white text-[8px] font-black shadow-xs">
+              {/* Gadget Pill / Counter / Alert (Right decoration) */}
+              {menuItem === 'Verification' && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black shadow-xs transition-colors ${pendingCount > 0 ? 'bg-black text-white animate-pulse' : 'bg-stone-300 text-stone-700'}`}>
                   {pendingCount}
                 </span>
               )}
 
-              {menuItem === 'UserPoP' && pendingUserPoPCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-900 text-white text-[8px] font-black shadow-xs">
+              {menuItem === 'UserPoP' && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black shadow-xs transition-colors ${pendingUserPoPCount > 0 ? 'bg-amber-900 text-white animate-pulse' : 'bg-stone-300 text-stone-700'}`}>
                   {pendingUserPoPCount}
                 </span>
               )}
 
-              {menuItem === 'TenantPoP' && pendingTenantPoPCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-emerald-900 text-white text-[8px] font-black shadow-xs">
+              {menuItem === 'TenantPoP' && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black shadow-xs transition-colors ${pendingTenantPoPCount > 0 ? 'bg-emerald-900 text-white animate-pulse' : 'bg-stone-300 text-stone-700'}`}>
                   {pendingTenantPoPCount}
                 </span>
               )}
 
-              {menuItem === 'Active Users' && activeUsersCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-emerald-700 text-white text-[8px] font-black shadow-xs">
+              {menuItem === 'Active Users' && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-black shadow-xs transition-colors ${activeUsersCount > 0 ? 'bg-emerald-700 text-white' : 'bg-stone-300 text-stone-700'}`}>
                   {activeUsersCount}
+                </span>
+              )}
+
+              {menuItem === 'Overview' && (
+                <span className="px-1.5 py-0.5 rounded-full bg-blue-900 text-white text-[8px] font-black shadow-xs">
+                  +15%
+                </span>
+              )}
+
+              {menuItem === 'Settings' && (
+                <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[8px] font-black shadow-xs animate-pulse">
+                  v1.2
                 </span>
               )}
             </button>
