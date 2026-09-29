@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, Loader2, MapPin, Plus, Minus, X } from 'lucide-react';
+import { Search, Loader2, MapPin, Plus, Minus, X, Navigation, RotateCcw, Layers } from 'lucide-react';
 
 interface UserCoords {
   lat: number;
@@ -16,21 +16,35 @@ interface SearchResult {
   lon: string;
 }
 
+interface RouteInfo {
+  distance: string;
+  duration: string;
+}
+
 export default function GiGsMap() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const accuracyCircleRef = useRef<L.Circle | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
+  const routePolylineRef = useRef<L.Polyline | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
   const [coords, setCoords] = useState<UserCoords | null>(null);
+
+  // Map Layer States (Street vs Satellite)
+  const [mapType, setMapType] = useState<'street' | 'satellite'>('street');
 
   // Search States
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
+
+  // Routing Guidance States
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
 
   // Default initial center (Cape Town center)
   const defaultCenter = { lat: -33.9249, lng: 18.4241 };
@@ -67,18 +81,18 @@ export default function GiGsMap() {
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // ZoomControl is false because we implement custom premium React zoom buttons in the bottom corner (Requirement 1 & 2)
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false
     }).setView([defaultCenter.lat, defaultCenter.lng], 13);
 
-    // Free OpenStreetMap Tile Layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Initial Street Tile Layer
+    const initialLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       subdomains: ['a', 'b', 'c']
     }).addTo(map);
 
+    tileLayerRef.current = initialLayer;
     mapInstanceRef.current = map;
 
     // Trigger high-accuracy device location automatically on load
@@ -96,14 +110,42 @@ export default function GiGsMap() {
     };
   }, []);
 
+  // Watch mapType and update layers dynamically
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Remove old active layer
+    if (tileLayerRef.current) {
+      mapInstanceRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    let url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    let maxZoom = 19;
+
+    if (mapType === 'satellite') {
+      // Free Esri World Imagery (High-precision open satellite tiles)
+      url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      maxZoom = 18;
+    }
+
+    const newLayer = L.tileLayer(url, {
+      maxZoom,
+      subdomains: ['a', 'b', 'c']
+    }).addTo(mapInstanceRef.current);
+
+    tileLayerRef.current = newLayer;
+  }, [mapType]);
+
   // Update map and marker immediately when coordinates are set
   useEffect(() => {
     if (!mapInstanceRef.current || !coords) return;
 
     const { lat, lng, accuracy } = coords;
 
-    // Center map on user exact position
-    mapInstanceRef.current.setView([lat, lng], 16);
+    // If there is no search route active, center map on user exact position
+    if (!routePolylineRef.current) {
+      mapInstanceRef.current.setView([lat, lng], 16);
+    }
 
     // User Pulse Icon HTML (with background/border overridden)
     const userDivIcon = L.divIcon({
@@ -136,11 +178,63 @@ export default function GiGsMap() {
         radius: accuracy,
         color: '#2563eb',
         fillColor: '#3b82f6',
-        fillOpacity: 0.12,
+        fillOpacity: 0.1,
         weight: 1.5
       }).addTo(mapInstanceRef.current);
     }
   }, [coords]);
+
+  // Request OSRM driving directions from current user position to target searched position
+  const calculateRoute = async (startLat: number, startLng: number, endLat: number, endLng: number) => {
+    if (!mapInstanceRef.current) return;
+    setIsCalculatingRoute(true);
+
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
+      );
+      const data = await response.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const routeCoords: [number, number][] = route.geometry.coordinates.map(
+          (point: [number, number]) => [point[1], point[0]] as [number, number]
+        );
+
+        // Clear existing route line
+        if (routePolylineRef.current) {
+          mapInstanceRef.current.removeLayer(routePolylineRef.current);
+        }
+
+        // Render beautiful, glowing guidance line
+        const polyline = L.polyline(routeCoords, {
+          color: '#3b82f6',
+          weight: 6,
+          opacity: 0.85,
+          lineCap: 'round',
+          lineJoin: 'round',
+          dashArray: '2, 3'
+        }).addTo(mapInstanceRef.current);
+
+        routePolylineRef.current = polyline;
+
+        // Save metadata info
+        setRouteInfo({
+          distance: (route.distance / 1000).toFixed(1) + ' km',
+          duration: Math.round(route.duration / 60) + ' mins'
+        });
+
+        // Fit map bounds to view user current position and the searched destination seamlessly
+        mapInstanceRef.current.fitBounds(polyline.getBounds(), {
+          padding: [60, 60]
+        });
+      }
+    } catch (err) {
+      console.error("OSRM Route calculation failed:", err);
+    } finally {
+      setIsCalculatingRoute(false);
+    }
+  };
 
   // Execute Address Search using Nominatim open-source API (Zero API Cost)
   const handleAddressSearch = async (e?: React.FormEvent) => {
@@ -171,14 +265,11 @@ export default function GiGsMap() {
   const navigateToLocation = (lat: number, lng: number, displayName: string) => {
     if (!mapInstanceRef.current) return;
 
-    // Move view with clean high-zoom fly animation
-    mapInstanceRef.current.flyTo([lat, lng], 16, { duration: 1.5 });
-
     // Custom high-contrast Pin marker for searches
     const searchPinIcon = L.divIcon({
       className: 'custom-search-marker',
       html: `
-        <div class="relative flex flex-col items-center">
+        <div class="relative flex flex-col items-center animate-bounce">
           <div class="bg-stone-900 border border-amber-500 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-2xl whitespace-nowrap mb-1 max-w-[150px] truncate">
             ${displayName.split(',')[0]}
           </div>
@@ -197,7 +288,6 @@ export default function GiGsMap() {
       searchMarkerRef.current = L.marker([lat, lng], { icon: searchPinIcon }).addTo(mapInstanceRef.current);
     }
 
-    // Set popup contents and trigger
     searchMarkerRef.current.bindPopup(`
       <div style="font-size:11px; font-family:sans-serif; text-align:center; padding:2px;">
         <strong style="color:#d97706; display:block; font-size:12px; margin-bottom:2px;">Searched Location</strong>
@@ -206,6 +296,32 @@ export default function GiGsMap() {
     `).openPopup();
 
     setShowDropdown(false);
+
+    // If user's current GPS location is active, draw guidance route lines directly!
+    if (coords) {
+      calculateRoute(coords.lat, coords.lng, lat, lng);
+    } else {
+      // Just fly to target if user position is not loaded yet
+      mapInstanceRef.current.flyTo([lat, lng], 16, { duration: 1.5 });
+    }
+  };
+
+  // Clear Guidance Routing details
+  const handleClearRoute = () => {
+    if (mapInstanceRef.current) {
+      if (routePolylineRef.current) {
+        mapInstanceRef.current.removeLayer(routePolylineRef.current);
+        routePolylineRef.current = null;
+      }
+      if (searchMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(searchMarkerRef.current);
+        searchMarkerRef.current = null;
+      }
+      setRouteInfo(null);
+      if (coords) {
+        mapInstanceRef.current.setView([coords.lat, coords.lng], 16);
+      }
+    }
   };
 
   // Custom Zoom Control actions
@@ -221,6 +337,11 @@ export default function GiGsMap() {
     }
   };
 
+  // Switch Map Layer Type
+  const toggleMapType = () => {
+    setMapType((prev) => (prev === 'street' ? 'satellite' : 'street'));
+  };
+
   return (
     <div className="fixed inset-0 w-full h-full pb-[64px] overflow-hidden bg-stone-900 z-10">
       {/* Dynamic override styles for markers */}
@@ -232,7 +353,7 @@ export default function GiGsMap() {
         }
       `}</style>
 
-      {/* Premium Address Search Bar overlay at the very top (Requirement 2) */}
+      {/* Address Search Bar overlay at the very top */}
       <div className="absolute top-4 left-4 right-4 z-[1001] max-w-md mx-auto">
         <form onSubmit={handleAddressSearch} className="relative flex items-center w-full bg-stone-900/95 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl p-1.5">
           <div className="flex items-center flex-1 pl-2.5">
@@ -289,8 +410,54 @@ export default function GiGsMap() {
         )}
       </div>
 
-      {/* Floating Premium Zoom Controls positioned directly on top of the bottom menu bar */}
-      <div className="absolute bottom-6 right-4 z-[1001] flex flex-col gap-1.5">
+      {/* Floating Guidance / Route Info Card at the bottom center */}
+      {routeInfo && (
+        <div className="absolute bottom-20 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-80 z-[1001] bg-stone-950/95 border border-amber-500/30 shadow-2xl rounded-2xl p-3.5 flex items-center justify-between text-white animate-fade-in pointer-events-auto">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+              <Navigation className="w-4 h-4" />
+            </div>
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">Direct Guidance Route</span>
+              <div className="flex items-center gap-1.5 text-xs font-black">
+                <span className="text-white">{routeInfo.distance}</span>
+                <span className="text-stone-500">•</span>
+                <span className="text-amber-400">{routeInfo.duration}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleClearRoute}
+            className="p-2 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white rounded-xl flex items-center gap-1 text-[10px] transition-colors active:scale-95 cursor-pointer font-bold shrink-0"
+            title="Clear Route & Reset view"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset</span>
+          </button>
+        </div>
+      )}
+
+      {/* Integrated Vertical Control Column (Zoom + Satellite Switcher) on the right vertical center */}
+      <div className="absolute top-1/2 -translate-y-1/2 right-4 z-[2000] flex flex-col gap-2">
+        {/* Satellite Map Switcher (Small elegant toggle icon) */}
+        <button
+          onClick={toggleMapType}
+          className={`w-10 h-10 rounded-xl border shadow-2xl flex flex-col items-center justify-center active:scale-90 transition-all cursor-pointer bg-stone-900/90 backdrop-blur-md ${
+            mapType === 'satellite'
+              ? 'border-amber-500 text-amber-400'
+              : 'border-white/20 text-stone-300 hover:text-white'
+          }`}
+          title="Toggle Satellite View"
+        >
+          <Layers className="w-5 h-5 stroke-[2.2]" />
+          <span className="text-[7px] font-extrabold uppercase mt-0.5 tracking-tighter">
+            {mapType === 'satellite' ? 'Sat' : 'Map'}
+          </span>
+        </button>
+
+        <div className="w-10 h-[1px] bg-white/10 my-0.5" />
+
+        {/* Zoom Controls */}
         <button
           onClick={handleZoomIn}
           className="w-10 h-10 bg-stone-900/90 backdrop-blur-md text-white border border-white/20 rounded-xl shadow-2xl flex items-center justify-center hover:bg-stone-800 active:scale-90 transition-all cursor-pointer"
