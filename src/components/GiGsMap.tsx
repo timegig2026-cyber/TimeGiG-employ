@@ -27,7 +27,9 @@ import {
   Trash2,
   Edit3,
   Save,
-  Calendar
+  Calendar,
+  Lock,
+  Phone
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -198,6 +200,25 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [selectedGig, setSelectedGig] = useState<Gig | null>(null);
   const [isApplying, setIsApplying] = useState<boolean>(false);
   const [showApplySuccess, setShowApplySuccess] = useState<boolean>(false);
+
+  // Accepted GiGs state for contact details privacy unlock
+  const [acceptedGigs, setAcceptedGigs] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('timegig_accepted_gigs');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const markGigAccepted = (gigId: string) => {
+    setAcceptedGigs((prev) => {
+      if (prev.includes(gigId)) return prev;
+      const updated = [...prev, gigId];
+      localStorage.setItem('timegig_accepted_gigs', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Edit Inline States
   const [isEditingMode, setIsEditingMode] = useState<boolean>(false);
@@ -712,6 +733,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
       return;
     }
 
+    markGigAccepted(gig.id);
     setIsApplying(true);
     setApplyCountdown(60);
     speakGuidance(`Initiating job application to ${gig.title}. Securing freelancer contract connections.`);
@@ -1695,6 +1717,43 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
                 </p>
               </div>
 
+              {/* Gig Poster Contact Details (Protected until Accepted) */}
+              <div className="bg-stone-950/60 p-2.5 rounded-xl border border-white/5 space-y-1 font-sans">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-stone-400 block">Gig Poster Contact Phone</span>
+                  {acceptedGigs.includes(selectedGig.id) || selectedGig.createdBy === currentUserId ? (
+                    <span className="text-emerald-400 text-[8px] font-black uppercase bg-emerald-500/20 px-1.5 py-0.5 rounded-md">
+                      🔓 Unlocked
+                    </span>
+                  ) : (
+                    <span className="text-amber-400 text-[8px] font-black uppercase bg-amber-500/20 px-1.5 py-0.5 rounded-md">
+                      🔒 Protected
+                    </span>
+                  )}
+                </div>
+
+                {acceptedGigs.includes(selectedGig.id) || selectedGig.createdBy === currentUserId ? (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-extrabold font-mono">
+                      <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                      <a href="tel:+27723456789" className="hover:underline">+27 72 345 6789</a>
+                    </div>
+                    <a
+                      href="https://api.whatsapp.com/send?phone=27723456789"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black uppercase rounded-lg shadow-2xs"
+                    >
+                      💬 WhatsApp
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-stone-400 italic">
+                    🔒 Phone contact protected until you accept &amp; apply to this gig.
+                  </p>
+                )}
+              </div>
+
               {/* Cancellation Dialog Area */}
               {isCancellingMode && (
                 <div className="space-y-2 bg-rose-950/25 border border-rose-500/25 p-2.5 rounded-xl text-stone-300">
@@ -1860,7 +1919,24 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
               <div className="space-y-1">
                 <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Invitation Accepted!</span>
                 <p className="text-xs font-bold text-white">{selectedSeeker.firstName} is heading to your exact location</p>
-                <p className="text-[10px] text-stone-400 italic">Watch seeker's marker slide towards you in real-time</p>
+                
+                <div className="pt-2 flex items-center justify-center gap-2">
+                  <a
+                    href={`tel:${selectedSeeker.contactNumber}`}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase flex items-center gap-1 shadow-md"
+                  >
+                    <Phone className="w-3 h-3" />
+                    <span>Call {selectedSeeker.contactNumber}</span>
+                  </a>
+                  <a
+                    href={`https://api.whatsapp.com/send?phone=${selectedSeeker.contactNumber.replace(/[^0-9+]/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-400 text-[10px] font-black uppercase flex items-center gap-1 shadow-md"
+                  >
+                    <span>💬 WhatsApp</span>
+                  </a>
+                </div>
               </div>
             </div>
           ) : hiringSeekerState === 'arrived' ? (

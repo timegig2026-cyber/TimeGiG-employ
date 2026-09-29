@@ -28,9 +28,18 @@ export interface UserProfileSubmission {
   province: string;
   contactNumber: string;
   email: string;
+  trade?: string;
+  workExperience?: string;
   documents: IDDocument[];
   socialLinks: SocialLink[];
   status: ProfileStatus;
   rejectionReason?: string;
   isLocked?: boolean;
+  rating?: number;
+  reviewsCount?: number;
+  completedJobs?: number;
+  isEnabled?: boolean;
+  managedByTenantId?: string;
+  referredByUserId?: string;
+  userType?: 'User' | 'Tenant';
 }

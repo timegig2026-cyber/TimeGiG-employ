@@ -18,7 +18,8 @@ import {
   Clock,
   Send,
   Loader2,
-  DollarSign
+  DollarSign,
+  Lock
 } from 'lucide-react';
 import { getStoredProfiles } from '../utils/profileStore';
 
@@ -209,29 +210,58 @@ export function SeekersFeature() {
     );
   }, [selectedSeeker]);
 
-  useEffect(() => {
-    const customProfiles = getStoredProfiles();
-    const formattedCustom: SeekerProfile[] = customProfiles.map((p, i) => ({
-      id: `custom_${p.id || i}`,
-      firstName: p.firstName,
-      surname: p.surname,
-      category: 'General Contractor',
-      province: p.province || 'Western Cape',
-      address: p.address || 'User Address',
-      email: p.email || 'no-email@timegig.com',
-      contactNumber: p.contactNumber || '+27 00 000 0000',
-      rating: 4.8,
-      faceImage: p.faceImage,
-      lat: defaultCenter.lat + (Math.random() - 0.5) * 0.1,
-      lng: defaultCenter.lng + (Math.random() - 0.5) * 0.1,
-      bio: 'Verified contractor on TimeGig platform. Highly skilled in repair diagnostics and quick task resolution.',
-      experienceYears: 4,
-      verifiedID: true,
-      cleanCriminalRecord: true
-    }));
+  const toggleRadarLive = () => {
+    const nextStatus = !isSeekerLive;
+    setIsSeekerLive(nextStatus);
+    localStorage.setItem('seeker_live_status', nextStatus ? 'true' : 'false');
+    window.dispatchEvent(new Event('radar_status_updated'));
+    if (nextStatus) {
+      speakVoice("Radar Live Activated! You are now visible to nearby clients ready to get hired.");
+    } else {
+      speakVoice("Radar Live Deactivated. You are now offline.");
+    }
+  };
 
-    setSeekers([...formattedCustom, ...SEEDED_SEEKERS]);
-  }, []);
+  useEffect(() => {
+    const handleSync = () => {
+      const status = localStorage.getItem('seeker_live_status') !== 'false';
+      setIsSeekerLive(status);
+
+      const customProfiles = getStoredProfiles();
+      const formattedCustom: SeekerProfile[] = customProfiles.map((p, i) => ({
+        id: `custom_${p.id || i}`,
+        firstName: p.firstName,
+        surname: p.surname,
+        category: p.trade || 'General Contractor',
+        province: p.province || 'Western Cape',
+        address: p.address || 'Current Location',
+        email: p.email || 'user@timegig.com',
+        contactNumber: p.contactNumber || '+27 72 000 0000',
+        rating: 5.0,
+        faceImage: p.faceImage,
+        lat: userCoords ? userCoords.lat : defaultCenter.lat,
+        lng: userCoords ? userCoords.lng : defaultCenter.lng,
+        bio: p.workExperience || `Verified active ${p.trade || 'specialist'} ready to get hired on TimeGiG radar live.`,
+        experienceYears: 5,
+        verifiedID: true,
+        cleanCriminalRecord: true
+      }));
+
+      setSeekers([...formattedCustom, ...SEEDED_SEEKERS]);
+    };
+
+    handleSync();
+
+    window.addEventListener('profile_store_updated', handleSync);
+    window.addEventListener('radar_status_updated', handleSync);
+    window.addEventListener('storage', handleSync);
+
+    return () => {
+      window.removeEventListener('profile_store_updated', handleSync);
+      window.removeEventListener('radar_status_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [userCoords]);
 
   const activeLat = userCoords?.lat ?? defaultCenter.lat;
   const activeLng = userCoords?.lng ?? defaultCenter.lng;
@@ -257,11 +287,31 @@ export function SeekersFeature() {
     return true;
   });
 
+  // Track Accepted Seekers for Privacy Contact Details Release
+  const [acceptedSeekers, setAcceptedSeekers] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('timegig_accepted_seekers');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const markSeekerAccepted = (seekerId: string) => {
+    setAcceptedSeekers((prev) => {
+      if (prev.includes(seekerId)) return prev;
+      const updated = [...prev, seekerId];
+      localStorage.setItem('timegig_accepted_seekers', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Handle Seeker hiring submission invitation (Requirement: User can hire seeker)
   const handleHireSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSeeker || !proposedBudget.trim()) return;
 
+    markSeekerAccepted(selectedSeeker.id);
     setIsHiringSubmitting(true);
     setTimeout(() => {
       setIsHiringSubmitting(false);
@@ -295,17 +345,30 @@ export function SeekersFeature() {
     <div className="w-full max-w-md mx-auto space-y-4 pb-20 select-none">
       
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-stone-900 via-stone-800 to-stone-900 border border-white/10 rounded-3xl p-5 shadow-2xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-stone-900 via-stone-800 to-stone-900 border border-white/10 rounded-3xl p-5 shadow-2xl relative overflow-hidden flex items-center justify-between">
         <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl" />
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative z-10">
           <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/35 flex items-center justify-center text-amber-400">
             <Compass className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-white text-base font-black uppercase tracking-wider font-sans">Nearby Seekers</h2>
-            <p className="text-[10px] text-stone-400">Find & Hire verified contractors nearby</p>
+            <p className="text-[10px] text-stone-400">Find &amp; Hire verified contractors nearby</p>
           </div>
         </div>
+
+        {/* Live Radar Toggle Switch */}
+        <button
+          onClick={toggleRadarLive}
+          className={`px-3 py-1.5 rounded-2xl border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer relative z-10 shadow-lg ${
+            isSeekerLive
+              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
+              : 'bg-stone-800/80 border-stone-700 text-stone-400 hover:bg-stone-800'
+          }`}
+        >
+          <div className={`w-2 h-2 rounded-full ${isSeekerLive ? 'bg-emerald-400 animate-ping' : 'bg-stone-500'}`} />
+          <span>{isSeekerLive ? 'Radar LIVE' : 'Radar Off'}</span>
+        </button>
       </div>
 
       {/* Search Input Filter Panel */}
@@ -384,6 +447,7 @@ export function SeekersFeature() {
         ) : filteredSeekers.length > 0 ? (
           filteredSeekers.map((seeker) => {
             const distance = getDistanceInMiles(activeLat, activeLng, seeker.lat, seeker.lng);
+            const isUser = seeker.id.startsWith('custom_');
             return (
               <div
                 key={seeker.id}
@@ -391,11 +455,17 @@ export function SeekersFeature() {
                   setSelectedSeeker(seeker);
                   setIsHiringMode(false);
                 }}
-                className="bg-white hover:bg-stone-50 border border-stone-200/80 rounded-2xl p-4 shadow-md transition-all duration-300 hover:scale-[1.01] hover:shadow-lg cursor-pointer flex items-center justify-between"
+                className={`rounded-2xl p-4 shadow-md transition-all duration-300 hover:scale-[1.01] hover:shadow-lg cursor-pointer flex items-center justify-between border ${
+                  isUser
+                    ? 'bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-white border-emerald-500/50 shadow-emerald-500/10'
+                    : 'bg-white hover:bg-stone-50 border-stone-200/80'
+                }`}
               >
                 <div className="flex items-center gap-3.5 overflow-hidden">
                   <div className="relative shrink-0">
-                    <div className="w-11 h-11 rounded-full border border-stone-200 shadow-sm overflow-hidden bg-stone-900 flex items-center justify-center">
+                    <div className={`w-11 h-11 rounded-full border shadow-sm overflow-hidden bg-stone-900 flex items-center justify-center ${
+                      isUser ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-stone-200'
+                    }`}>
                       {seeker.faceImage ? (
                         <img src={seeker.faceImage} className="w-full h-full object-cover" />
                       ) : (
@@ -409,13 +479,18 @@ export function SeekersFeature() {
                   </div>
 
                   <div className="space-y-0.5 overflow-hidden font-sans">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h4 className="text-stone-900 font-bold text-xs truncate">
                         {seeker.firstName} {seeker.surname}
                       </h4>
                       <span className="bg-amber-100 border border-amber-300 text-amber-800 font-black text-[7px] uppercase px-1.5 py-0.5 rounded-full tracking-wider shrink-0">
                         {seeker.category}
                       </span>
+                      {isUser && (
+                        <span className="bg-emerald-600 text-white font-black text-[7px] uppercase px-1.5 py-0.5 rounded-full tracking-wider shrink-0 animate-pulse">
+                          ⚡ YOU (READY TO GET HIRED)
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 text-stone-500 text-[10px]">
@@ -623,35 +698,77 @@ export function SeekersFeature() {
                     </div>
                   </div>
 
-                  {/* Contact details */}
-                  <div className="space-y-3 bg-stone-50 p-4 rounded-2xl border border-stone-200/50">
+                  {/* Contact details (Protected until Accepted) */}
+                  <div className="space-y-3 bg-stone-50 p-4 rounded-2xl border border-stone-200/50 font-sans">
                     <div className="flex items-center gap-2.5 text-xs">
                       <MapPin className="w-4 h-4 text-stone-500 shrink-0" />
                       <span className="text-stone-700">{selectedSeeker.address}</span>
                     </div>
-                    <div className="flex items-center gap-2.5 text-xs">
-                      <Phone className="w-4 h-4 text-stone-500 shrink-0" />
-                      <a href={`tel:${selectedSeeker.contactNumber}`} className="text-blue-600 hover:underline font-bold">
-                        {selectedSeeker.contactNumber}
-                      </a>
-                    </div>
-                    <div className="flex items-center gap-2.5 text-xs">
-                      <Mail className="w-4 h-4 text-stone-500 shrink-0" />
-                      <a href={`mailto:${selectedSeeker.email}`} className="text-blue-600 hover:underline font-bold">
-                        {selectedSeeker.email}
-                      </a>
-                    </div>
+
+                    {acceptedSeekers.includes(selectedSeeker.id) ? (
+                      <>
+                        <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-950 text-xs font-bold flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <span>🔓 Contact Details Unlocked (Match Accepted)!</span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 text-xs">
+                          <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <a href={`tel:${selectedSeeker.contactNumber}`} className="text-emerald-800 font-extrabold hover:underline">
+                            📞 {selectedSeeker.contactNumber}
+                          </a>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 text-xs">
+                          <Mail className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <a href={`mailto:${selectedSeeker.email}`} className="text-emerald-800 font-extrabold hover:underline">
+                            ✉️ {selectedSeeker.email}
+                          </a>
+                        </div>
+
+                        <a
+                          href={`https://api.whatsapp.com/send?phone=${selectedSeeker.contactNumber.replace(/[^0-9+]/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+                        >
+                          💬 Direct WhatsApp Contact
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-950 text-xs font-semibold flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Contact phone &amp; email are protected until offer is accepted.</span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 text-xs opacity-70">
+                          <Phone className="w-4 h-4 text-stone-400 shrink-0" />
+                          <span className="text-stone-500 font-mono font-bold">🔒 +27 ** *** **** (Protected)</span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 text-xs opacity-70">
+                          <Mail className="w-4 h-4 text-stone-400 shrink-0" />
+                          <span className="text-stone-500 font-mono font-bold">🔒 ********@****.com (Protected)</span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Main Call To Action Button (Hires direct) */}
                   <button
                     onClick={() => {
-                      setIsHiringMode(true);
-                      speakVoice(`Recruiting ${selectedSeeker.firstName}. Please proposed your work requirements and budget.`);
+                      if (acceptedSeekers.includes(selectedSeeker.id)) {
+                        setIsHiringMode(true);
+                      } else {
+                        markSeekerAccepted(selectedSeeker.id);
+                        setIsHiringMode(true);
+                        speakVoice(`Accepting offer with ${selectedSeeker.firstName}. Contact details unlocked! Please propose work requirements.`);
+                      }
                     }}
                     className="w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-center text-xs font-black uppercase tracking-wider block shadow-md transition-all active:scale-95 cursor-pointer"
                   >
-                    Hire & Send Invitation
+                    {acceptedSeekers.includes(selectedSeeker.id) ? 'Hire & Propose Work Details' : 'Accept Match & Unlock Contacts'}
                   </button>
                 </div>
               )}

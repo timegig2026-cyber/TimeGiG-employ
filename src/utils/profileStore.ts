@@ -53,3 +53,12 @@ export function updateProfileStatus(id: string, status: 'Approved' | 'Rejected',
   saveStoredProfiles(updated);
   return updated;
 }
+
+export function toggleProfileEnabled(id: string, isEnabled: boolean): UserProfileSubmission[] {
+  const existing = getStoredProfiles();
+  const updated = existing.map((p) =>
+    p.id === id ? { ...p, isEnabled } : p
+  );
+  saveStoredProfiles(updated);
+  return updated;
+}

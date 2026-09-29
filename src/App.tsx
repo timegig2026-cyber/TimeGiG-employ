@@ -6,6 +6,7 @@ import { ActivationFeature } from './components/ActivationFeature';
 import { SeekersFeature } from './components/SeekersFeature';
 import GiGsMap from './components/GiGsMap';
 import { getStoredProfiles } from './utils/profileStore';
+import { BlurredMapBackground } from './components/BlurredMapBackground';
 
 type TabType = 'Seekers' | 'GiGs' | 'Tenant' | 'Activation' | 'Profile';
 
@@ -15,6 +16,9 @@ export default function App() {
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [isUserSignedUp, setIsUserSignedUp] = useState<boolean>(() => {
     return localStorage.getItem('timegig_signed_up') === 'true';
+  });
+  const [themeAccent, setThemeAccent] = useState<string>(() => {
+    return localStorage.getItem('timegig_theme_color') || 'amber';
   });
 
   useEffect(() => {
@@ -34,8 +38,13 @@ export default function App() {
       }
     };
 
+    const handleThemeChange = () => {
+      setThemeAccent(localStorage.getItem('timegig_theme_color') || 'amber');
+    };
+
     window.addEventListener('gigs_form_status', handleFormStatus);
     window.addEventListener('timegig_signup_status', handleSignupStatus);
+    window.addEventListener('timegig_theme_changed', handleThemeChange);
 
     // Keep splash screen visible alone for exactly 5 seconds
     const splashTimer = setTimeout(() => {
@@ -81,13 +90,43 @@ export default function App() {
     );
   }
 
+  // Registration & Approval Gate: App access is locked until user completes sign-up
+  if (!isUserSignedUp) {
+    return (
+      <div className="fixed inset-0 w-screen h-screen bg-stone-950 text-stone-900 font-sans antialiased overflow-hidden z-50">
+        <ProfileFeature />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/90 text-stone-900 flex flex-col relative font-sans antialiased overflow-x-hidden">
-      {/* Blurred White Ambient Wallpaper Layers */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-white/80 blur-[100px]" />
-        <div className="absolute top-1/3 -right-32 w-96 h-96 rounded-full bg-slate-200/40 blur-[120px]" />
-        <div className="absolute -bottom-32 left-1/3 w-96 h-96 rounded-full bg-slate-300/30 blur-[110px]" />
+      {/* Blurred White & Dynamic Color Accent Ambient Wallpaper Layers */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden transition-all duration-700">
+        <div className={`absolute -top-32 -left-32 w-96 h-96 rounded-full blur-[100px] transition-colors duration-700 ${
+          themeAccent === 'amber' ? 'bg-amber-300/50' :
+          themeAccent === 'emerald' ? 'bg-emerald-300/50' :
+          themeAccent === 'indigo' ? 'bg-indigo-300/50' :
+          themeAccent === 'purple' ? 'bg-purple-300/50' :
+          themeAccent === 'rose' ? 'bg-rose-300/50' :
+          'bg-teal-300/50'
+        }`} />
+        <div className={`absolute top-1/3 -right-32 w-96 h-96 rounded-full blur-[120px] transition-colors duration-700 ${
+          themeAccent === 'amber' ? 'bg-yellow-200/40' :
+          themeAccent === 'emerald' ? 'bg-teal-200/40' :
+          themeAccent === 'indigo' ? 'bg-sky-200/40' :
+          themeAccent === 'purple' ? 'bg-fuchsia-200/40' :
+          themeAccent === 'rose' ? 'bg-pink-200/40' :
+          'bg-cyan-200/40'
+        }`} />
+        <div className={`absolute -bottom-32 left-1/3 w-96 h-96 rounded-full blur-[110px] transition-colors duration-700 ${
+          themeAccent === 'amber' ? 'bg-orange-200/30' :
+          themeAccent === 'emerald' ? 'bg-lime-200/30' :
+          themeAccent === 'indigo' ? 'bg-violet-200/30' :
+          themeAccent === 'purple' ? 'bg-pink-200/30' :
+          themeAccent === 'rose' ? 'bg-amber-200/30' :
+          'bg-emerald-200/30'
+        }`} />
         <div className="absolute inset-0 bg-white/70 backdrop-blur-3xl" />
       </div>
 

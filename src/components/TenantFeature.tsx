@@ -23,11 +23,18 @@ import {
   Building2,
   Save,
   Edit3,
-  Gift
+  Gift,
+  Share2,
+  Copy,
+  Send,
+  Power,
+  UserX,
+  Link,
+  CheckCircle
 } from 'lucide-react';
 import { UserProfileSubmission, ProfileStatus } from '../types/profile';
 import { UserPoPSubmission } from '../types/pop';
-import { getStoredProfiles, updateProfileStatus } from '../utils/profileStore';
+import { getStoredProfiles, updateProfileStatus, toggleProfileEnabled } from '../utils/profileStore';
 import {
   getStoredPoPs,
   updatePoPStatus,
@@ -40,9 +47,22 @@ import {
 } from '../utils/popStore';
 
 export function TenantFeature() {
-  const [activeMenu, setActiveMenu] = useState<'Verification' | 'UserPoP' | 'TenantPoP' | 'Active Users' | 'Overview' | 'Settings'>('Verification');
+  const [activeMenu, setActiveMenu] = useState<'Verification' | 'UserPoP' | 'TenantPoP' | 'Active Users' | 'Managed Users' | 'Share Link' | 'Overview' | 'Settings'>('Verification');
   const [profiles, setProfiles] = useState<UserProfileSubmission[]>([]);
   const [pops, setPops] = useState<UserPoPSubmission[]>([]);
+
+  // Active Tenant ID & Link Copy Feedback
+  const [activeTenantId] = useState<string>('TNT_WESTERN_CAPE');
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  // Enable / Disable Profile Handler
+  const handleToggleUserEnable = (id: string, currentEnabled?: boolean) => {
+    const nextStatus = currentEnabled === false ? true : false;
+    const updated = toggleProfileEnabled(id, nextStatus);
+    setProfiles(updated);
+    setSaveBankMsg(`User/Tenant Profile ${nextStatus ? '🟢 ENABLED (Active)' : '🔴 DISABLED (Suspended)'} with immediate effect!`);
+    setTimeout(() => setSaveBankMsg(null), 3500);
+  };
 
   // Banking & Free Trial Management State
   const [banking, setBanking] = useState<BankingDetails>(getStoredBankingDetails());
@@ -191,7 +211,7 @@ export function TenantFeature() {
     <div className="w-full max-w-4xl mx-auto pt-12 pb-8 text-xs">
       {/* Tenant Top Menu Bar */}
       <header className="fixed top-0 left-0 right-0 w-full bg-gradient-to-b from-[#FAF4E6] via-[#EADBCA] to-[#D5C2A5] border-b border-white/80 px-2 sm:px-4 py-1.5 flex items-center justify-around shadow-[0_3px_10px_rgba(0,0,0,0.1)] z-30 overflow-x-auto">
-        {(['Verification', 'UserPoP', 'TenantPoP', 'Active Users', 'Overview', 'Settings'] as const).map((menuItem) => {
+        {(['Verification', 'UserPoP', 'TenantPoP', 'Active Users', 'Managed Users', 'Share Link', 'Overview', 'Settings'] as const).map((menuItem) => {
           const isActive = activeMenu === menuItem;
           
           // Gadget Icon selector
@@ -202,6 +222,8 @@ export function TenantFeature() {
               case 'UserPoP': return <Receipt {...iconProps} />;
               case 'TenantPoP': return <Building2 {...iconProps} />;
               case 'Active Users': return <Users {...iconProps} />;
+              case 'Managed Users': return <UserCheck {...iconProps} />;
+              case 'Share Link': return <Share2 {...iconProps} />;
               case 'Overview': return <TrendingUp {...iconProps} />;
               case 'Settings': return <Sparkles {...iconProps} />;
               default: return null;
@@ -398,10 +420,25 @@ export function TenantFeature() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-stone-100">
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-stone-100 flex-wrap">
+                    {/* Enable / Disable Profile Switch */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserEnable(p.id, p.isEnabled)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-xs cursor-pointer ${
+                        p.isEnabled === false
+                          ? 'bg-rose-100 border border-rose-300 text-rose-800 hover:bg-emerald-100 hover:text-emerald-900'
+                          : 'bg-emerald-100 border border-emerald-300 text-emerald-800 hover:bg-rose-100 hover:text-rose-900'
+                      }`}
+                      title={p.isEnabled === false ? 'Click to Enable User Profile' : 'Click to Disable / Suspend User Profile'}
+                    >
+                      <Power className={`w-3 h-3 ${p.isEnabled === false ? 'text-rose-600' : 'text-emerald-600'}`} />
+                      <span>{p.isEnabled === false ? '🔴 Disabled' : '🟢 Enabled'}</span>
+                    </button>
+
                     <button
                       onClick={() => setSelectedProfile(p)}
-                      className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-900 text-[10px] font-bold flex items-center gap-1"
+                      className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-900 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Eye className="w-3 h-3" />
                       View Profile
@@ -878,7 +915,184 @@ export function TenantFeature() {
         </div>
       )}
 
-      {/* Overview Feature */}
+      {/* Managed Users Tab */}
+      {activeMenu === 'Managed Users' && (
+        <div className="px-2 space-y-4 mt-1">
+          <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-100/90 via-stone-100 to-amber-50 border border-amber-300/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h1 className="text-sm font-black text-stone-900 uppercase tracking-wider flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-amber-700" />
+                Users Joined via My Tenant Link
+              </h1>
+              <p className="text-[11px] text-stone-600 mt-0.5">
+                Users who registered using your unique Tenant referral link. Only your Tenant node manages these assigned users.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-amber-600 text-white rounded-full text-xs font-black shrink-0 shadow-xs">
+              {profiles.filter((p) => p.managedByTenantId === activeTenantId).length} Managed Users
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {profiles.filter((p) => p.managedByTenantId === activeTenantId).length === 0 ? (
+              <div className="p-8 text-center bg-white/80 rounded-3xl border border-stone-200 text-stone-500 space-y-2">
+                <Users className="w-8 h-8 mx-auto text-amber-500" />
+                <p className="font-bold text-xs text-stone-800">No users have joined via your Tenant Share Link yet.</p>
+                <p className="text-[11px] text-stone-500 max-w-md mx-auto">
+                  Share your custom Tenant referral link on WhatsApp or social media. Anyone who signs up through your link will automatically be assigned to you for management!
+                </p>
+              </div>
+            ) : (
+              profiles
+                .filter((p) => p.managedByTenantId === activeTenantId)
+                .map((p) => (
+                  <div key={p.id} className="p-3.5 rounded-2xl bg-white border border-stone-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center font-black text-amber-900 text-sm">
+                        {p.firstName ? p.firstName[0] : 'U'}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xs font-black text-stone-900">{p.firstName} {p.surname}</h3>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                            p.isEnabled === false ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {p.isEnabled === false ? '🔴 Suspended' : '🟢 Active'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-stone-500">{p.email} • {p.contactNumber} • {p.trade || 'Specialist'}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleUserEnable(p.id, p.isEnabled)}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                          p.isEnabled === false
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-emerald-100 hover:text-emerald-900'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-rose-100 hover:text-rose-900'
+                        }`}
+                      >
+                        <Power className="w-3 h-3" />
+                        <span>{p.isEnabled === false ? '🔴 Enable User' : '🟢 Disable User'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => setSelectedProfile(p)}
+                        className="px-2.5 py-1.5 rounded-xl bg-stone-900 text-white text-[10px] font-bold hover:bg-stone-800 cursor-pointer"
+                      >
+                        View Profile
+                      </button>
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Share Link Tab */}
+      {activeMenu === 'Share Link' && (
+        <div className="px-2 space-y-5 mt-1">
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950 text-white shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-wider">
+                <Share2 className="w-4 h-4 text-amber-400" />
+                Official Tenant Network Share Link
+              </div>
+              <span className="text-[10px] font-mono text-stone-400">Tenant Node ID: {activeTenantId}</span>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-white">Your Dedicated Tenant Share Link</h2>
+              <p className="text-xs text-stone-300 mt-1 leading-relaxed">
+                Direct new users to register through your exact custom link. Anyone who signs up via this link is automatically tagged with your Tenant Node ID and managed exclusively by you.
+              </p>
+            </div>
+
+            <div className="bg-stone-950 border border-stone-800 p-3.5 rounded-2xl flex items-center justify-between gap-3 font-mono text-xs text-amber-300 overflow-x-auto select-all shadow-inner">
+              <span className="truncate">{typeof window !== 'undefined' ? window.location.origin : 'https://timegig.app'}/?tenant_ref={activeTenantId}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                  navigator.clipboard.writeText(shareUrl);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 3000);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-sans text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0 shadow-lg cursor-pointer"
+              >
+                {copiedLink ? <CheckCircle className="w-4 h-4 text-stone-950" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedLink ? 'Copied Link!' : 'Copy Exact Link'}</span>
+              </button>
+            </div>
+
+            {/* Direct Social Media Sharing Buttons */}
+            <div className="space-y-2.5 pt-2 border-t border-white/10">
+              <span className="text-xs font-black uppercase tracking-wider text-stone-300 block">
+                Direct Share to Social Media Platforms
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent('Join our official TimeGiG Tenant Network! Register here: ' + shareUrl)}`, '_blank');
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+                >
+                  💬 WhatsApp
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent('Join our official TimeGiG Tenant Network!')}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-black hover:bg-stone-800 border border-stone-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+                >
+                  𝕏 Twitter / X
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank');
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+                >
+                  📘 Facebook
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`, '_blank');
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-sky-700 hover:bg-sky-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+                >
+                  💼 LinkedIn
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/?tenant_ref=${activeTenantId}`;
+                    window.open(`mailto:?subject=${encodeURIComponent('Invitation to join TimeGiG Tenant Network')}&body=${encodeURIComponent('Join our Tenant Network on TimeGiG using this link: ' + shareUrl)}`, '_blank');
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-stone-700 hover:bg-stone-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-transform active:scale-95"
+                >
+                  ✉️ Email
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {activeMenu === 'Overview' && (
         <div className="px-2 py-4 max-w-lg mx-auto space-y-4">
           <div className="p-5 rounded-2xl bg-white/90 backdrop-blur-md border border-stone-200 shadow-md space-y-4">
