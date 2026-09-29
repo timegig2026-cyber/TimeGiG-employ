@@ -20,6 +20,38 @@ import { SocialLink, IDDocument, UserProfileSubmission, ProfileStatus } from '..
 import { getStoredProfiles, addOrUpdateProfileSubmission, saveStoredProfiles } from '../utils/profileStore';
 
 export function ProfileFeature() {
+  // Lock state (Requirement: Add a big lock on profile user can unlock it anytime)
+  const [isProfileLocked, setIsProfileLocked] = useState<boolean>(() => {
+    return localStorage.getItem('timegig_profile_locked') !== 'false';
+  });
+
+  const speakVoice = (text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find((v) => {
+      const name = v.name.toLowerCase();
+      return name.includes('female') || name.includes('google us english') || name.includes('samantha') || name.includes('english');
+    });
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    }
+    utterance.pitch = 1.08;
+    utterance.rate = 0.95;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleToggleLock = (lockedState: boolean) => {
+    setIsProfileLocked(lockedState);
+    localStorage.setItem('timegig_profile_locked', String(lockedState));
+    if (lockedState) {
+      speakVoice("Profile information locked and secured.");
+    } else {
+      speakVoice("Profile information unlocked successfully. You can now view and edit your details.");
+    }
+  };
+
   // Current submission profile
   const [currentProfile, setCurrentProfile] = useState<UserProfileSubmission | null>(null);
 
@@ -274,9 +306,49 @@ export function ProfileFeature() {
     );
   }
 
+  if (isProfileLocked) {
+    return (
+      <div className="w-full max-w-md mx-auto py-14 px-5 text-center space-y-6 font-sans select-none">
+        <div className="bg-gradient-to-b from-[#FAF4E6] to-[#EADBCA]/95 border-2 border-stone-200 p-8 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col items-center space-y-5">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl" />
+          
+          <div className="w-20 h-20 rounded-full bg-stone-900 border-4 border-amber-500 flex items-center justify-center text-amber-400 shadow-xl relative animate-pulse">
+            <Lock className="w-10 h-10 stroke-[2.5]" />
+            <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-amber-500 border-2 border-stone-950 flex items-center justify-center text-stone-950 text-[10px] font-black">
+              AES
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-stone-900 text-base font-black uppercase tracking-wider">Credentials Secured</h2>
+            <div className="inline-flex items-center gap-1 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] text-amber-800 font-extrabold uppercase">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Session Locked</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-stone-600 leading-relaxed max-w-sm">
+            Your verification files, National ID documents, face images, and contact links are locked and encrypted to prevent unauthorized edits. Click the large key below to decrypt your session instantly at any time.
+          </p>
+
+          <button
+            onClick={() => handleToggleLock(false)}
+            className="w-full py-4 bg-stone-900 hover:bg-stone-850 text-white font-black uppercase tracking-widest rounded-2xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg cursor-pointer"
+          >
+            <span>🔓 Decrypt & Unlock Profile</span>
+          </button>
+        </div>
+
+        <p className="text-[10px] text-stone-400 italic">
+          💡 You can lock and unlock your profile details at any time with a single click.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-xl mx-auto py-4 px-3 text-xs">
-      {/* Header Banner with Logout Button */}
+      {/* Header Banner with Logout & Lock Buttons */}
       <div className="mb-4 flex items-center justify-between gap-2 border-b border-stone-200 pb-3">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/90 border border-amber-900/15 text-amber-950 text-[10px] font-black uppercase tracking-wider mb-1 shadow-2xs">
@@ -288,16 +360,29 @@ export function ProfileFeature() {
           </h1>
         </div>
 
-        {/* Logout Button */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-rose-50 hover:text-rose-700 text-stone-700 text-xs font-bold border border-stone-300 transition-colors flex items-center gap-1.5 shadow-2xs"
-          title="Sign out of your profile"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          Logout
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Lock Profile Button */}
+          <button
+            type="button"
+            onClick={() => handleToggleLock(true)}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold border border-amber-600 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            title="Lock your profile credentials"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            Lock Profile
+          </button>
+
+          {/* Logout Button */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-rose-50 hover:text-rose-700 text-stone-700 text-xs font-bold border border-stone-300 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            title="Sign out of your profile"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* Success Notification Alert */}
