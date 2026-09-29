@@ -19,9 +19,11 @@ import {
   Send,
   Loader2,
   DollarSign,
-  Lock
+  Lock,
+  HelpCircle
 } from 'lucide-react';
 import { getStoredProfiles } from '../utils/profileStore';
+import { FeatureHelpModal } from './FeatureHelpModal';
 
 interface SeekerProfile {
   id: string;
@@ -341,6 +343,8 @@ export function SeekersFeature() {
     'Northern Cape'
   ];
 
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
   return (
     <div className="w-full max-w-md mx-auto space-y-4 pb-20 select-none">
       
@@ -352,7 +356,17 @@ export function SeekersFeature() {
             <Compass className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-white text-base font-black uppercase tracking-wider font-sans">Nearby Seekers</h2>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-white text-base font-black uppercase tracking-wider font-sans">Nearby Seekers</h2>
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(true)}
+                className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-400 transition-all cursor-pointer shadow-xs ml-1"
+                title="Open Seekers Guide & Help"
+              >
+                <HelpCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+            </div>
             <p className="text-[10px] text-stone-400">Find &amp; Hire verified contractors nearby</p>
           </div>
         </div>
@@ -804,6 +818,14 @@ export function SeekersFeature() {
           />
         </button>
       </div>
+
+      {/* Feature Help Modal */}
+      <FeatureHelpModal
+        featureName="Seekers"
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onRestartTour={() => window.dispatchEvent(new Event('timegig_open_tour'))}
+      />
     </div>
   );
 }

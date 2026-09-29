@@ -15,12 +15,14 @@ import {
   Sparkles,
   Building2,
   Copy,
-  Check
+  Check,
+  HelpCircle
 } from 'lucide-react';
 import { UserProfileSubmission } from '../types/profile';
 import { UserPoPSubmission } from '../types/pop';
 import { getStoredProfiles } from '../utils/profileStore';
 import { getStoredPoPs, addOrUpdatePoP, getStoredBankingDetails, BankingDetails } from '../utils/popStore';
+import { FeatureHelpModal } from './FeatureHelpModal';
 
 export function ActivationFeature() {
   const [profile, setProfile] = useState<UserProfileSubmission | null>(null);
@@ -150,12 +152,23 @@ export function ActivationFeature() {
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const slotsRemaining = maxTenantsAllowed - tenantCount;
 
   return (
     <div className="w-full max-w-lg mx-auto py-6 px-3 text-xs space-y-5">
       {/* Header */}
-      <div className="text-center">
+      <div className="text-center relative">
+        <button
+          type="button"
+          onClick={() => setShowHelpModal(true)}
+          className="absolute top-0 right-0 p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-800 transition-all cursor-pointer shadow-xs flex items-center gap-1 font-bold text-[10px]"
+          title="Open Activation Guide & Help"
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-amber-700" />
+          <span>Help</span>
+        </button>
+
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/90 border border-amber-900/15 text-amber-950 text-[10px] font-black uppercase tracking-wider mb-2 shadow-2xs">
           <Zap className="w-3.5 h-3.5 text-amber-700 fill-amber-700" />
           Account Activation & Membership
@@ -367,13 +380,21 @@ export function ActivationFeature() {
 
           <button
             type="submit"
-            className="w-full py-3 rounded-xl bg-black text-white text-xs font-black uppercase tracking-wider hover:bg-stone-800 transition-all shadow-md flex items-center justify-center gap-1.5"
+            className="w-full py-3 rounded-xl bg-black text-white text-xs font-black uppercase tracking-wider hover:bg-stone-800 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4 text-amber-400" />
             Submit Proof of Payment ({selectedRole})
           </button>
         </form>
       </div>
+
+      {/* Feature Help Modal */}
+      <FeatureHelpModal
+        featureName="Activation"
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onRestartTour={() => window.dispatchEvent(new Event('timegig_open_tour'))}
+      />
     </div>
   );
 }

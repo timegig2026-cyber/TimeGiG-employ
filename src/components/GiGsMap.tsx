@@ -34,6 +34,7 @@ import {
 import { db, auth } from '../firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getStoredProfiles } from '../utils/profileStore';
+import { FeatureHelpModal } from './FeatureHelpModal';
 
 interface UserCoords {
   lat: number;
@@ -200,6 +201,7 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
   const [selectedGig, setSelectedGig] = useState<Gig | null>(null);
   const [isApplying, setIsApplying] = useState<boolean>(false);
   const [showApplySuccess, setShowApplySuccess] = useState<boolean>(false);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
   // Accepted GiGs state for contact details privacy unlock
   const [acceptedGigs, setAcceptedGigs] = useState<string[]>(() => {
@@ -1283,6 +1285,17 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
       {/* Integrated Vertical Control Column */}
       <div className="absolute top-1/2 -translate-y-1/2 right-4 z-[2000] flex flex-col gap-2">
+        {/* Feature Help Icon Button */}
+        <button
+          onClick={() => setShowHelpModal(true)}
+          className="w-10 h-10 bg-amber-500 hover:bg-amber-400 text-stone-950 border border-amber-400 rounded-xl shadow-2xl flex items-center justify-center active:scale-90 transition-all cursor-pointer font-bold"
+          title="Open GiGs Map Quick Guide & Help"
+        >
+          <HelpCircle className="w-5 h-5 stroke-[2.5]" />
+        </button>
+
+        <div className="w-10 h-[1px] bg-white/15 my-0.5" />
+
         <button
           onClick={() => {
             if (coords) {
@@ -2055,6 +2068,14 @@ export default function GiGsMap({ activeTab }: { activeTab?: string }) {
 
       {/* Full-Screen Map Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+      {/* Feature Help Modal */}
+      <FeatureHelpModal
+        featureName="GiGs"
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onRestartTour={() => window.dispatchEvent(new Event('timegig_open_tour'))}
+      />
     </div>
   );
 }

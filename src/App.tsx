@@ -7,6 +7,7 @@ import { SeekersFeature } from './components/SeekersFeature';
 import GiGsMap from './components/GiGsMap';
 import { getStoredProfiles } from './utils/profileStore';
 import { BlurredMapBackground } from './components/BlurredMapBackground';
+import { WelcomeOnboarding } from './components/WelcomeOnboarding';
 
 type TabType = 'Seekers' | 'GiGs' | 'Tenant' | 'Activation' | 'Profile';
 
@@ -14,6 +15,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<TabType>('Profile');
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
+  const [isManualTourOpen, setIsManualTourOpen] = useState<boolean>(false);
   const [isUserSignedUp, setIsUserSignedUp] = useState<boolean>(() => {
     return localStorage.getItem('timegig_signed_up') === 'true';
   });
@@ -42,9 +44,14 @@ export default function App() {
       setThemeAccent(localStorage.getItem('timegig_theme_color') || 'amber');
     };
 
+    const handleOpenTour = () => {
+      setIsManualTourOpen(true);
+    };
+
     window.addEventListener('gigs_form_status', handleFormStatus);
     window.addEventListener('timegig_signup_status', handleSignupStatus);
     window.addEventListener('timegig_theme_changed', handleThemeChange);
+    window.addEventListener('timegig_open_tour', handleOpenTour);
 
     // Keep splash screen visible alone for exactly 5 seconds
     const splashTimer = setTimeout(() => {
@@ -54,6 +61,8 @@ export default function App() {
     return () => {
       window.removeEventListener('gigs_form_status', handleFormStatus);
       window.removeEventListener('timegig_signup_status', handleSignupStatus);
+      window.removeEventListener('timegig_theme_changed', handleThemeChange);
+      window.removeEventListener('timegig_open_tour', handleOpenTour);
       clearTimeout(splashTimer);
     };
   }, []);
@@ -193,6 +202,11 @@ export default function App() {
           );
         })}
       </nav>
+      {/* Guided Welcome Onboarding Modal */}
+      <WelcomeOnboarding
+        isOpenManual={isManualTourOpen}
+        onCloseManual={() => setIsManualTourOpen(false)}
+      />
     </div>
   );
 }

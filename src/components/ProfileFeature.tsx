@@ -25,11 +25,13 @@ import {
   RefreshCw,
   Share2,
   Copy,
-  Send
+  Send,
+  HelpCircle
 } from 'lucide-react';
 import { SocialLink, IDDocument, UserProfileSubmission, ProfileStatus } from '../types/profile';
 import { getStoredProfiles, addOrUpdateProfileSubmission, saveStoredProfiles } from '../utils/profileStore';
 import { BlurredMapBackground } from './BlurredMapBackground';
+import { FeatureHelpModal } from './FeatureHelpModal';
 
 export function ProfileFeature() {
   // Lock state (Requirement: Add a big lock on profile user can unlock it anytime)
@@ -355,6 +357,7 @@ export function ProfileFeature() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [isLoggedOut, setIsLoggedOut] = useState<boolean>(false);
   const [copiedUserLink, setCopiedUserLink] = useState<boolean>(false);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
   // Load user profile from store persistently
   const loadActiveProfile = useCallback(() => {
@@ -1147,6 +1150,17 @@ export function ProfileFeature() {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Feature Help Button */}
+          <button
+            type="button"
+            onClick={() => setShowHelpModal(true)}
+            className="px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-950 text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+            title="Open Profile & Settings Guide"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-amber-800" />
+            <span>Help</span>
+          </button>
+
           {/* Lock Profile Button */}
           <button
             type="button"
@@ -1794,6 +1808,14 @@ export function ProfileFeature() {
           </button>
         </div>
       </form>
+
+      {/* Feature Help Modal */}
+      <FeatureHelpModal
+        featureName="Profile"
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onRestartTour={() => window.dispatchEvent(new Event('timegig_open_tour'))}
+      />
     </div>
   );
 }

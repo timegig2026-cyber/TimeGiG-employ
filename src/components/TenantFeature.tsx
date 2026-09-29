@@ -30,11 +30,13 @@ import {
   Power,
   UserX,
   Link,
-  CheckCircle
+  CheckCircle,
+  HelpCircle
 } from 'lucide-react';
 import { UserProfileSubmission, ProfileStatus } from '../types/profile';
 import { UserPoPSubmission } from '../types/pop';
 import { getStoredProfiles, updateProfileStatus, toggleProfileEnabled } from '../utils/profileStore';
+import { FeatureHelpModal } from './FeatureHelpModal';
 import {
   getStoredPoPs,
   updatePoPStatus,
@@ -54,6 +56,7 @@ export function TenantFeature() {
   // Active Tenant ID & Link Copy Feedback
   const [activeTenantId] = useState<string>('TNT_WESTERN_CAPE');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
   // Enable / Disable Profile Handler
   const handleToggleUserEnable = (id: string, currentEnabled?: boolean) => {
@@ -292,6 +295,17 @@ export function TenantFeature() {
             </button>
           );
         })}
+
+        {/* Feature Help Icon Button */}
+        <button
+          type="button"
+          onClick={() => setShowHelpModal(true)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 text-[10px] font-black uppercase tracking-wider shadow-sm cursor-pointer shrink-0 ml-1"
+          title="Open Tenant Dashboard Guide & Help"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Help</span>
+        </button>
       </header>
 
       {/* Verification Tab */}
@@ -1505,6 +1519,14 @@ export function TenantFeature() {
           </p>
         </div>
       )}
+
+      {/* Feature Help Modal */}
+      <FeatureHelpModal
+        featureName="Tenant"
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onRestartTour={() => window.dispatchEvent(new Event('timegig_open_tour'))}
+      />
     </div>
   );
 }
