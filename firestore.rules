@@ -21,6 +21,10 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    match /gigs/{gigId} {
+      allow read, write: if true;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
