@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "User Profile",
+      "description": "User profile and activation details stored upon sign up/login",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User UID from Firebase Auth" },
+        "firstName": { "type": "string", "maxLength": 100 },
+        "surname": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "socialLinks": { "type": "string", "maxLength": 500 },
+        "workExperience": { "type": "string", "maxLength": 2000 },
+        "address": { "type": "string", "maxLength": 500 },
+        "location": { "type": "string", "maxLength": 200 },
+        "skills": { "type": "string", "maxLength": 500 },
+        "province": { "type": "string", "maxLength": 100 },
+        "trade": { "type": "string", "maxLength": 100 },
+        "avatar": { "type": "string", "maxLength": 1000000 },
+        "idDoc": { "type": "string", "maxLength": 1000000 },
+        "proofOfPaymentDoc": { "type": "string", "maxLength": 1000000 },
+        "isVerified": { "type": "boolean" },
+        "isSubscribed": { "type": "boolean" },
+        "subscriptionDate": { "type": "string", "maxLength": 100 },
+        "profileSubmitted": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["uid", "email"]
+    },
+    "hiringRequest": {
+      "title": "Hiring Request",
+      "description": "Seeker hiring requests for trade and gig services",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "seekerName": { "type": "string", "maxLength": 100 },
+        "seekerAvatar": { "type": "string", "maxLength": 1000000 },
+        "serviceNeeded": { "type": "string", "maxLength": 200 },
+        "tradeCategory": { "type": "string", "maxLength": 100 },
+        "budget": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["seekerName", "serviceNeeded", "tradeCategory"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/userProfile" },
+      "description": "Collection of user profiles keyed by user ID"
+    },
+    "/hiringRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/hiringRequest" },
+      "description": "Collection of hiring requests posted by seekers"
+    }
+  }
+}
